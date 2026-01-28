@@ -116,6 +116,13 @@ export class Executor {
       agentId,
       userId,
       config: this.config,
+      workspaceRoot: process.cwd(),
+      policy: {
+        allowlist: ["git", "pnpm", "npm", "node", "python", "python3"],
+        denylist: ["rm\\s+-rf", "curl.*\\|.*sh", "sudo", "chmod\\s+777"],
+        maxBytes: 2 * 1024 * 1024, // 2MB
+        timeoutMs: 30000,
+      },
     };
 
     const toolMessage: SessionMessage = {

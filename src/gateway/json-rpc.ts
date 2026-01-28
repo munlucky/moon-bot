@@ -12,6 +12,15 @@ export class JsonRpcServer {
     this.handlers.set(method, handler);
   }
 
+  /**
+   * Register multiple handlers at once.
+   */
+  registerBatch(handlers: Map<string, JsonRpcHandler>): void {
+    for (const [method, handler] of handlers.entries()) {
+      this.handlers.set(method, handler);
+    }
+  }
+
   unregister(method: string): void {
     this.handlers.delete(method);
   }

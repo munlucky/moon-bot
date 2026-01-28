@@ -90,18 +90,28 @@ export class SessionManager {
 
   private save(session: Session): void {
     const dir = this.getSessionsDir();
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
 
-    const filePath = this.getSessionPath(session.id);
-    const lines = session.messages.map((m) => JSON.stringify(m)).join("\n");
-    fs.writeFileSync(filePath, lines);
+      const filePath = this.getSessionPath(session.id);
+      const lines = session.messages.map((m) => JSON.stringify(m)).join("\n");
+      fs.writeFileSync(filePath, lines);
+    } catch (error) {
+      this.logger.error(`Failed to save session: ${session.id}`, { error });
+      throw new Error(`Session save failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   private appendMessage(sessionId: string, message: SessionMessage): void {
     const filePath = this.getSessionPath(sessionId);
-    fs.appendFileSync(filePath, JSON.stringify(message) + "\n");
+    try {
+      fs.appendFileSync(filePath, JSON.stringify(message) + "\n");
+    } catch (error) {
+      this.logger.error(`Failed to append message to session: ${sessionId}`, { error });
+      throw new Error(`Message append failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   private getSessionPath(sessionId: string): string {

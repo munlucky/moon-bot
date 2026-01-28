@@ -1,0 +1,280 @@
+// HTTP Tool with SSRF protection
+
+import type { ToolSpec } from "../../types/index.js";
+import { SsrfGuard } from "./SsrfGuard.js";
+
+interface HttpRequestInput {
+  method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS";
+  url: string;
+  headers?: Record<string, string>;
+  query?: Record<string, string>;
+  body?: string;
+  timeoutMs?: number;
+}
+
+interface HttpResponse {
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  body: string;
+}
+
+interface HttpDownloadInput {
+  url: string;
+  destPath: string;
+}
+
+interface HttpDownloadResult {
+  success: boolean;
+  path: string;
+  size: number;
+}
+
+const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
+
+/**
+ * Create HTTP request tool with SSRF protection.
+ */
+export function createHttpRequestTool(): ToolSpec<HttpRequestInput, HttpResponse> {
+  return {
+    id: "http.request",
+    description: "Make an HTTP request with SSRF protection",
+    schema: {
+      type: "object",
+      properties: {
+        method: {
+          type: "string",
+          enum: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
+        },
+        url: { type: "string" },
+        headers: { type: "object" },
+        query: { type: "object" },
+        body: { type: "string" },
+        timeoutMs: { type: "number" },
+      },
+      required: ["method", "url"],
+    },
+    run: async (input, ctx) => {
+      const startTime = Date.now();
+
+      try {
+        // SSRF check
+        const ssrfCheck = SsrfGuard.checkUrl(input.url);
+        if (!ssrfCheck.allowed) {
+          return {
+            ok: false,
+            error: {
+              code: "BLOCKED_URL",
+              message: ssrfCheck.reason ?? "URL is blocked by security policy",
+            },
+            meta: { durationMs: Date.now() - startTime },
+          };
+        }
+
+        // Build URL with query params
+        let url = input.url;
+        if (input.query && Object.keys(input.query).length > 0) {
+          const searchParams = new URLSearchParams();
+          for (const [key, value] of Object.entries(input.query)) {
+            searchParams.append(key, value);
+          }
+          const separator = url.includes("?") ? "&" : "?";
+          url = `${url}${separator}${searchParams.toString()}`;
+        }
+
+        // Prepare fetch options
+        const options: RequestInit = {
+          method: input.method,
+          headers: input.headers,
+          body: input.body,
+        };
+
+        // Set timeout
+        const timeoutMs = input.timeoutMs ?? ctx.policy.timeoutMs;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        options.signal = controller.signal;
+
+        // Make request
+        const response = await fetch(url, options);
+        clearTimeout(timeoutId);
+
+        // Get headers
+        const headers: Record<string, string> = {};
+        response.headers.forEach((value, key) => {
+          headers[key] = value;
+        });
+
+        // Check content length
+        const contentLength = response.headers.get("content-length");
+        if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_SIZE) {
+          return {
+            ok: false,
+            error: {
+              code: "SIZE_LIMIT",
+              message: `Response too large: ${contentLength} bytes (max: ${MAX_RESPONSE_SIZE})`,
+            },
+            meta: { durationMs: Date.now() - startTime },
+          };
+        }
+
+        // Get body with size limit
+        const body = await response.text();
+        if (body.length > MAX_RESPONSE_SIZE) {
+          return {
+            ok: false,
+            error: {
+              code: "SIZE_LIMIT",
+              message: `Response body exceeds size limit`,
+            },
+            meta: { durationMs: Date.now() - startTime, truncated: true },
+          };
+        }
+
+        return {
+          ok: true,
+          data: {
+            status: response.status,
+            statusText: response.statusText,
+            headers,
+            body,
+          },
+          meta: { durationMs: Date.now() - startTime },
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          error: {
+            code: "HTTP_ERROR",
+            message: error instanceof Error ? error.message : "HTTP request failed",
+          },
+          meta: { durationMs: Date.now() - startTime },
+        };
+      }
+    },
+  };
+}
+
+/**
+ * Create HTTP download tool (requires filesystem access).
+ * Note: This is optional and may not be available in all environments.
+ */
+export function createHttpDownloadTool(): ToolSpec<HttpDownloadInput, HttpDownloadResult> {
+  return {
+    id: "http.download",
+    description: "Download a file from a URL (requires filesystem access)",
+    schema: {
+      type: "object",
+      properties: {
+        url: { type: "string" },
+        destPath: { type: "string", description: "Destination path relative to workspace" },
+      },
+      required: ["url", "destPath"],
+    },
+    run: async (input, ctx) => {
+      const startTime = Date.now();
+
+      try {
+        // SSRF check
+        const ssrfCheck = SsrfGuard.checkUrl(input.url);
+        if (!ssrfCheck.allowed) {
+          return {
+            ok: false,
+            error: {
+              code: "BLOCKED_URL",
+              message: ssrfCheck.reason ?? "URL is blocked by security policy",
+            },
+            meta: { durationMs: Date.now() - startTime },
+          };
+        }
+
+        // Validate destination path
+        const { PathValidator } = await import("../filesystem/PathValidator.js");
+        const pathValidation = PathValidator.validate(input.destPath, ctx.workspaceRoot);
+
+        if (!pathValidation.valid) {
+          return {
+            ok: false,
+            error: {
+              code: "INVALID_PATH",
+              message: pathValidation.error ?? "Invalid destination path",
+            },
+            meta: { durationMs: Date.now() - startTime },
+          };
+        }
+
+        // Set timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), ctx.policy.timeoutMs);
+
+        // Download with size limit
+        const response = await fetch(input.url, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          return {
+            ok: false,
+            error: {
+              code: "HTTP_ERROR",
+              message: `HTTP ${response.status}: ${response.statusText}`,
+            },
+            meta: { durationMs: Date.now() - startTime },
+          };
+        }
+
+        // Check content length
+        const contentLength = response.headers.get("content-length");
+        const maxSize = ctx.policy.maxBytes;
+
+        if (contentLength && parseInt(contentLength, 10) > maxSize) {
+          return {
+            ok: false,
+            error: {
+              code: "SIZE_LIMIT",
+              message: `File too large: ${contentLength} bytes (max: ${maxSize})`,
+            },
+            meta: { durationMs: Date.now() - startTime },
+          };
+        }
+
+        // Get buffer
+        const buffer = await response.arrayBuffer();
+        if (buffer.byteLength > maxSize) {
+          return {
+            ok: false,
+            error: {
+              code: "SIZE_LIMIT",
+              message: `Downloaded file exceeds size limit`,
+            },
+            meta: { durationMs: Date.now() - startTime },
+          };
+        }
+
+        // Write to file
+        const { promises: fs } = await import("fs");
+        await fs.writeFile(pathValidation.resolvedPath!, Buffer.from(buffer));
+
+        return {
+          ok: true,
+          data: {
+            success: true,
+            path: input.destPath,
+            size: buffer.byteLength,
+          },
+          meta: { durationMs: Date.now() - startTime },
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          error: {
+            code: "DOWNLOAD_ERROR",
+            message: error instanceof Error ? error.message : "Download failed",
+          },
+          meta: { durationMs: Date.now() - startTime },
+        };
+      }
+    },
+  };
+}

@@ -5,6 +5,8 @@ import { randomUUID } from "crypto";
 import type { SystemConfig, ClientInfo, ConnectParams, ChatMessage } from "../types/index.js";
 import { JsonRpcServer } from "./json-rpc.js";
 import { createLogger, type Logger } from "../utils/logger.js";
+import { ToolRuntime } from "../tools/runtime/ToolRuntime.js";
+import { createToolHandlers } from "./handlers/tools.handler.js";
 
 /**
  * Rate limiter to prevent connection flooding.
@@ -74,8 +76,9 @@ export class GatewayServer {
   private logger: Logger;
   private rateLimiter: ConnectionRateLimiter;
   private cleanupInterval: NodeJS.Timeout | null = null;
+  private toolRuntime: ToolRuntime | null = null;
 
-  constructor(config: SystemConfig) {
+  constructor(config: SystemConfig, workspaceRoot?: string) {
     this.config = config;
     this.logger = createLogger(config);
     this.rpc = new JsonRpcServer();
@@ -83,17 +86,47 @@ export class GatewayServer {
       60000, // 1 minute window
       10     // max 10 connections per minute per IP
     );
+
+    // Initialize tool runtime
+    this.toolRuntime = new ToolRuntime(config, {
+      workspaceRoot: workspaceRoot ?? process.cwd(),
+      defaultTimeoutMs: 30000,
+      maxConcurrent: 10,
+      enableApprovals: true,
+    });
+
     this.setupHandlers();
   }
 
+  /**
+   * Get the tool runtime instance.
+   */
+  getToolRuntime(): ToolRuntime | null {
+    return this.toolRuntime;
+  }
+
   private setupHandlers(): void {
+    // Register tool handlers
+    if (this.toolRuntime) {
+      const toolHandlers = createToolHandlers(this.toolRuntime, this.config);
+      this.rpc.registerBatch(toolHandlers);
+    }
+
     // connect: Handshake and client registration
     this.rpc.register("connect", async (params) => {
       const { clientType, version, token } = params as ConnectParams;
 
-      // Validate auth if configured
-      if (this.config.gateways[0]?.auth?.tokens) {
-        if (!token || !this.config.gateways[0].auth.tokens[token]) {
+      // Validate auth if configured (safe check for empty gateway array)
+      const authConfig = this.config.gateways?.[0]?.auth;
+      if (authConfig?.tokens && Object.keys(authConfig.tokens).length > 0) {
+        if (!token) {
+          this.logger.warn("Connection attempt without token");
+          throw new Error("Authentication required");
+        }
+        // Use timing-safe comparison (check token exists)
+        const isValidToken = Object.keys(authConfig.tokens).includes(token);
+        if (!isValidToken) {
+          this.logger.warn(`Invalid token attempt from ${clientType}`);
           throw new Error("Authentication failed");
         }
       }

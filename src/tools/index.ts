@@ -1,18 +1,93 @@
-// Toolkit: Tool registry and execution
+// Tool Registry and Integration
 
 import path from "path";
+import os from "os";
+import { randomUUID } from "crypto";
 import { createLogger, type Logger } from "../utils/logger.js";
-import type { SystemConfig, ToolSpec, ToolContext } from "../types/index.js";
+import type { SystemConfig, ToolSpec, ToolContext, ToolResult } from "../types/index.js";
+import { ToolRuntime } from "./runtime/ToolRuntime.js";
+import { ApprovalManager } from "./runtime/ApprovalManager.js";
+
+// File I/O Tools
+import {
+  createFileReadTool,
+  createFileWriteTool,
+  createFileListTool,
+  createFileGlobTool,
+} from "./filesystem/FileIOTool.js";
+
+// HTTP Tools
+import { createHttpRequestTool, createHttpDownloadTool } from "./http/HttpTool.js";
+
+// Desktop Tools
+import { createSystemRunTool, createSystemRunRawTool } from "./desktop/SystemRunTool.js";
+
+// Browser Tools
+import { BrowserTool, createBrowserTools } from "./browser/BrowserTool.js";
 
 export class Toolkit {
   private tools = new Map<string, ToolSpec>();
   private logger: Logger;
+  private runtime: ToolRuntime | null = null;
+  private browserTool: BrowserTool | null = null;
 
   constructor(config: SystemConfig) {
     this.logger = createLogger(config);
   }
 
-  register(spec: ToolSpec): void {
+  /**
+   * Initialize the tool runtime with all registered tools.
+   */
+  initializeRuntime(workspaceRoot?: string): ToolRuntime {
+    if (this.runtime) {
+      return this.runtime;
+    }
+
+    const runtime = new ToolRuntime(
+      {
+        gateways: [],
+        agents: [],
+        channels: [],
+        tools: [],
+      },
+      {
+        workspaceRoot: workspaceRoot ?? process.cwd(),
+        defaultTimeoutMs: 30000,
+        maxConcurrent: 10,
+        enableApprovals: true,
+      }
+    );
+
+    // Register all tools
+    for (const tool of this.tools.values()) {
+      runtime.register(tool);
+    }
+
+    this.runtime = runtime;
+    return runtime;
+  }
+
+  /**
+   * Initialize browser tool (requires Playwright).
+   */
+  async initializeBrowser(headless: boolean = true): Promise<void> {
+    if (!this.browserTool) {
+      this.browserTool = new BrowserTool(5);
+      await this.browserTool.initialize(headless);
+    }
+  }
+
+  /**
+   * Close browser tool.
+   */
+  async closeBrowser(): Promise<void> {
+    if (this.browserTool) {
+      await this.browserTool.close();
+      this.browserTool = null;
+    }
+  }
+
+  register(spec: ToolSpec<unknown, unknown>): void {
     this.tools.set(spec.id, spec);
     this.logger.info(`Tool registered: ${spec.id}`);
   }
@@ -33,92 +108,107 @@ export class Toolkit {
   has(id: string): boolean {
     return this.tools.has(id);
   }
+
+  /**
+   * Get the tool runtime instance.
+   */
+  getRuntime(): ToolRuntime | null {
+    return this.runtime;
+  }
+}
+
+/**
+ * Create and configure all Gateway tools.
+ */
+export async function createGatewayTools(
+  config: SystemConfig,
+  options: {
+    workspaceRoot?: string;
+    enableBrowser?: boolean;
+    browserHeadless?: boolean;
+  } = {}
+): Promise<Toolkit> {
+  const toolkit = new Toolkit(config);
+  const workspaceRoot = options.workspaceRoot ?? process.cwd();
+
+  // Create approval manager
+  const approvalManager = new ApprovalManager();
+  await approvalManager.loadConfig();
+
+  // Register File I/O tools
+  toolkit.register(createFileReadTool() as ToolSpec<unknown, unknown>);
+  toolkit.register(createFileWriteTool() as ToolSpec<unknown, unknown>);
+  toolkit.register(createFileListTool() as ToolSpec<unknown, unknown>);
+  toolkit.register(createFileGlobTool() as ToolSpec<unknown, unknown>);
+
+  // Register HTTP tools
+  toolkit.register(createHttpRequestTool() as ToolSpec<unknown, unknown>);
+  toolkit.register(createHttpDownloadTool() as ToolSpec<unknown, unknown>);
+
+  // Register Desktop tools
+  toolkit.register(createSystemRunTool(approvalManager) as ToolSpec<unknown, unknown>);
+  toolkit.register(createSystemRunRawTool(approvalManager) as ToolSpec<unknown, unknown>);
+
+  // Register Browser tools (if enabled)
+  if (options.enableBrowser) {
+    const browserTool = new BrowserTool(5);
+    await browserTool.initialize(options.browserHeadless ?? true);
+
+    const browserTools = createBrowserTools(browserTool);
+    for (const tool of browserTools) {
+      toolkit.register(tool);
+    }
+
+    // Store browser tool reference for cleanup
+    (toolkit as any).browserTool = browserTool;
+  }
+
+  // Initialize runtime
+  toolkit.initializeRuntime(workspaceRoot);
+
+  return toolkit;
 }
 
 /**
  * Normalize and validate file path to prevent directory traversal attacks.
  * Resolves any ".." or "." segments and ensures the path is within allowed directory.
+ * Works correctly on both Windows and Unix systems.
  */
-function validateFilePath(inputPath: string, allowedDir: string): string {
-  // Normalize the path to resolve any ".." or "."
+export function validateFilePath(inputPath: string, allowedDir: string): string {
+  // Normalize allowed directory first for consistent comparison
+  const normalizedAllowed = path.normalize(allowedDir);
+
+  // Normalize the input path to resolve any ".." or "."
   const normalized = path.normalize(inputPath);
 
-  // Check if the normalized path contains ".." (after normalization it should be resolved)
+  // Check for path traversal attempts (after normalization, ".." should be resolved)
+  // This is a defense-in-depth check
   if (normalized.includes("..")) {
     throw new Error("Path traversal detected: '..' not allowed");
   }
 
   // Resolve against the allowed directory
-  const resolved = path.resolve(allowedDir, normalized);
+  const resolved = path.resolve(normalizedAllowed, normalized);
 
-  // Ensure the resolved path is within the allowed directory
-  if (!resolved.startsWith(allowedDir)) {
+  // Normalize the resolved path for comparison (handles case-insensitive filesystems)
+  const normalizedResolved = path.normalize(resolved);
+  const normalizedAllowedLower = normalizedAllowed.toLowerCase();
+  const normalizedResolvedLower = normalizedResolved.toLowerCase();
+
+  // Check if the resolved path starts with allowed directory
+  // Using case-insensitive comparison for Windows compatibility
+  if (!normalizedResolvedLower.startsWith(normalizedAllowedLower)) {
+    throw new Error("Path traversal detected: path outside allowed directory");
+  }
+
+  // Additional check: ensure we don't escape via parent directory on case-sensitive systems
+  if (!normalizedResolved.startsWith(normalizedAllowed)) {
     throw new Error("Path traversal detected: path outside allowed directory");
   }
 
   return resolved;
 }
 
-// Example tools
-export function createBrowserTool(): ToolSpec {
-  return {
-    id: "browser.open",
-    description: "Open a web page in the browser",
-    schema: {
-      type: "object",
-      properties: {
-        url: { type: "string" },
-      },
-      required: ["url"],
-    },
-    run: async (input: unknown, ctx: ToolContext) => {
-      const { url } = input as { url: string };
-      // TODO: Implement Playwright integration
-      return { url, opened: true };
-    },
-  };
-}
-
-export function createFilesystemTool(allowedDir: string = "/tmp/moonbot"): ToolSpec {
-  return {
-    id: "filesystem.write",
-    description: "Write content to a file",
-    schema: {
-      type: "object",
-      properties: {
-        path: { type: "string" },
-        content: { type: "string" },
-      },
-      required: ["path", "content"],
-    },
-    run: async (input: unknown, ctx: ToolContext) => {
-      const { path: inputPath, content } = input as { path: string; content: string };
-
-      // Validate and sanitize the file path
-      const safePath = validateFilePath(inputPath, allowedDir);
-
-      // TODO: Implement filesystem operations with safePath
-      return { path: safePath, written: true };
-    },
-  };
-}
-
-export function createApiTool(): ToolSpec {
-  return {
-    id: "api.call",
-    description: "Make an HTTP API call",
-    schema: {
-      type: "object",
-      properties: {
-        url: { type: "string" },
-        method: { type: "string", enum: ["GET", "POST", "PUT", "DELETE"] },
-      },
-      required: ["url", "method"],
-    },
-    run: async (input: unknown, ctx: ToolContext) => {
-      const { url, method } = input as { url: string; method: string };
-      // TODO: Implement HTTP client
-      return { url, method, status: 200 };
-    },
-  };
-}
+// Re-export for convenience
+export { ToolRuntime, ApprovalManager };
+export type { ToolContext, ToolResult };

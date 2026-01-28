@@ -92,6 +92,13 @@ export interface ToolContext {
   agentId: string;
   userId: string;
   config: SystemConfig;
+  workspaceRoot: string;
+  policy: {
+    allowlist: string[];
+    denylist: string[];
+    maxBytes: number;
+    timeoutMs: number;
+  };
 }
 
 export interface ToolSpec<TInput = unknown, TOutput = unknown> {
@@ -99,7 +106,7 @@ export interface ToolSpec<TInput = unknown, TOutput = unknown> {
   description: string;
   schema: object;
   requiresApproval?: boolean;
-  run: (input: TInput, ctx: ToolContext) => Promise<TOutput>;
+  run: (input: TInput, ctx: ToolContext) => Promise<ToolResult<TOutput>>;
 }
 
 export interface ApprovalRequest {
@@ -162,4 +169,37 @@ export interface Step {
   toolId?: string;
   input?: unknown;
   dependsOn?: string[];
+}
+
+export interface ToolResult<T = unknown> {
+  ok: boolean;
+  data?: T;
+  error?: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
+  meta: {
+    durationMs: number;
+    artifacts?: string[];
+    truncated?: boolean;
+  };
+}
+
+export interface ApprovalConfig {
+  allowlist: {
+    commands: string[];
+    cwdPrefix: string[];
+  };
+  denylist: {
+    patterns: string[];
+  };
+}
+
+export interface ToolRegistry {
+  register(spec: ToolSpec): void;
+  unregister(id: string): void;
+  get(id: string): ToolSpec | undefined;
+  list(): ToolSpec[];
+  has(id: string): boolean;
 }
