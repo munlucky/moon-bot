@@ -1,8 +1,9 @@
-// Executor: Executes steps using tools
+// Executor: Executes steps using tools with Replanner integration
 
 import { createLogger, type Logger } from "../utils/logger.js";
-import type { SystemConfig, ToolContext, SessionMessage } from "../types/index.js";
+import type { SystemConfig, ToolContext, SessionMessage, ToolResult, ToolSpec } from "../types/index.js";
 import { Planner, type Step } from "./planner.js";
+import { Replanner, type ToolFailure, type ExecutionContext } from "./replanner.js";
 import type { Toolkit } from "../tools/index.js";
 
 export interface ExecutionResult {
@@ -10,6 +11,11 @@ export interface ExecutionResult {
   outputs: Map<string, unknown>;
   errors: Map<string, Error>;
   messages: SessionMessage[];
+  recoveryStats?: {
+    totalAttempts: number;
+    successfulRecoveries: number;
+    failedRecoveries: number;
+  };
 }
 
 export class Executor {
@@ -17,12 +23,17 @@ export class Executor {
   private logger: Logger;
   private planner: Planner;
   private toolkit: Toolkit;
+  private replanner: Replanner;
 
   constructor(config: SystemConfig, toolkit: Toolkit) {
     this.config = config;
     this.logger = createLogger(config);
     this.planner = new Planner(config);
     this.toolkit = toolkit;
+
+    // Initialize Replanner with available tools
+    const availableTools: ToolSpec[] = toolkit.list();
+    this.replanner = new Replanner(this.logger, availableTools);
   }
 
   async execute(
@@ -33,9 +44,13 @@ export class Executor {
   ): Promise<ExecutionResult> {
     this.logger.info("Executing task", { message, sessionId });
 
+    // Reset replanner state for new execution
+    this.replanner.reset();
+
     const messages: SessionMessage[] = [];
     const outputs = new Map<string, unknown>();
     const errors = new Map<string, Error>();
+    const completedSteps = new Set<string>();
 
     // Generate plan
     const plan = await this.planner.plan(message);
@@ -47,45 +62,186 @@ export class Executor {
       timestamp: Date.now(),
     });
 
-    // Execute steps sequentially
-    for (const step of plan.steps) {
-      try {
-        const toolMessage = await this.executeStep(step, sessionId, agentId, userId);
-        if (toolMessage) {
-          messages.push(toolMessage);
-        }
+    const startTime = Date.now();
 
-        const result = { completed: true };
-        outputs.set(step.id, result);
+    // Execute steps sequentially with recovery
+    for (const step of plan.steps) {
+      const stepResult = await this.executeStepWithRetry(
+        step,
+        plan.steps,
+        completedSteps,
+        sessionId,
+        agentId,
+        userId
+      );
+
+      if (stepResult.success) {
+        completedSteps.add(step.id);
+        outputs.set(step.id, stepResult.result);
 
         messages.push({
           type: "result",
           content: `Step "${step.description}" completed`,
           timestamp: Date.now(),
-          metadata: { stepId: step.id, result },
+          metadata: { stepId: step.id, result: stepResult.result },
         });
-      } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error));
-        errors.set(step.id, err);
+
+        // Mark step success in replanner
+        this.replanner.markStepSuccess(step.id);
+      } else {
+        errors.set(step.id, stepResult.error!);
 
         messages.push({
           type: "error",
-          content: `Step "${step.description}" failed: ${err.message}`,
+          content: `Step "${step.description}" failed: ${stepResult.error!.message}`,
           timestamp: Date.now(),
           metadata: { stepId: step.id },
         });
 
-        // Try replanning
-        const newPlan = await this.planner.replan(step, err, plan);
-        if (newPlan.steps.length > 0) {
-          // Continue with new plan
-          plan.steps = newPlan.steps;
+        // Check if we should abort
+        if (stepResult.abort) {
+          this.logger.error("Execution aborted", { stepId: step.id });
+          break;
         }
       }
     }
 
     const success = errors.size === 0;
-    return { success, outputs, errors, messages };
+    const recoveryStats = this.replanner.getStats();
+
+    this.logger.info("Execution completed", {
+      success,
+      duration: Date.now() - startTime,
+      recoveryStats,
+    });
+
+    return { success, outputs, errors, messages, recoveryStats };
+  }
+
+  /**
+   * Execute a step with automatic retry and recovery
+   */
+  private async executeStepWithRetry(
+    step: Step,
+    allSteps: Step[],
+    completedSteps: Set<string>,
+    sessionId: string,
+    agentId: string,
+    userId: string,
+    attemptCount: number = 0,
+    alternativeAttemptCount: number = 0
+  ): Promise<{
+    success: boolean;
+    result?: unknown;
+    error?: Error;
+    abort?: boolean;
+  }> {
+    try {
+      const toolMessage = await this.executeStep(step, sessionId, agentId, userId);
+      return { success: true, result: { completed: true } };
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+
+      this.logger.warn("Step execution failed, attempting recovery", {
+        stepId: step.id,
+        toolId: step.toolId,
+        attemptCount,
+        error: err.message,
+      });
+
+      // Create ToolFailure for replanner
+      const failure: ToolFailure = {
+        toolId: step.toolId || "",
+        step,
+        error: err,
+        attemptCount,
+        alternativeAttemptCount,
+        timestamp: Date.now(),
+      };
+
+      // Create execution context
+      const context: ExecutionContext = {
+        sessionId,
+        agentId,
+        userId,
+        remainingGoals: allSteps
+          .filter((s) => !completedSteps.has(s.id) && s.id !== step.id)
+          .map((s) => s.description),
+        completedSteps: Array.from(completedSteps).map((id) =>
+          allSteps.find((s) => s.id === id)!
+        ),
+        failedStep: step,
+        startTime: Date.now(),
+      };
+
+      // Call replanner
+      const recoveryPlan = await this.replanner.replan(failure, context);
+
+      // Handle recovery plan
+      switch (recoveryPlan.action) {
+        case "RETRY": {
+          this.logger.info(`Retrying step ${step.id}`, {
+            reason: recoveryPlan.reason,
+          });
+
+          return this.executeStepWithRetry(
+            step,
+            allSteps,
+            completedSteps,
+            sessionId,
+            agentId,
+            userId,
+            attemptCount + 1,
+            alternativeAttemptCount
+          );
+        }
+
+        case "ALTERNATIVE": {
+          this.logger.info(`Using alternative tool for step ${step.id}`, {
+            alternativeTool: recoveryPlan.toolId,
+            reason: recoveryPlan.reason,
+          });
+
+          // Create alternative step
+          const alternativeStep: Step = {
+            ...step,
+            toolId: recoveryPlan.toolId!,
+          };
+
+          return this.executeStepWithRetry(
+            alternativeStep,
+            allSteps,
+            completedSteps,
+            sessionId,
+            agentId,
+            userId,
+            0,
+            alternativeAttemptCount + 1
+          );
+        }
+
+        case "APPROVAL": {
+          this.logger.info(`Approval requested for step ${step.id}`, {
+            message: recoveryPlan.message,
+          });
+          return {
+            success: false,
+            error: new Error(`Approval required: ${recoveryPlan.message}`),
+            abort: true,
+          };
+        }
+
+        case "ABORT": {
+          this.logger.error(`Recovery aborted for step ${step.id}`, {
+            reason: recoveryPlan.reason,
+          });
+          return { success: false, error: err, abort: true };
+        }
+
+        default:
+          return { success: false, error: err, abort: true };
+      }
+    }
   }
 
   private async executeStep(
@@ -95,7 +251,10 @@ export class Executor {
     userId: string
   ): Promise<SessionMessage | null> {
     if (!step.toolId) {
-      // Non-tool step (like "respond")
+      this.logger.debug("Non-tool step (no toolId specified)", {
+        stepId: step.id,
+        description: step.description,
+      });
       return null;
     }
 
@@ -134,5 +293,19 @@ export class Executor {
 
     await tool.run(step.input, context);
     return toolMessage;
+  }
+
+  /**
+   * Get recovery statistics
+   */
+  getRecoveryStats(): ReturnType<Replanner["getStats"]> {
+    return this.replanner.getStats();
+  }
+
+  /**
+   * Get remaining time before global timeout
+   */
+  getRemainingTime(): number {
+    return this.replanner.getRemainingTime();
   }
 }

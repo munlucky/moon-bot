@@ -1,40 +1,28 @@
 schemaVersion: "1.0"
 request:
-  userMessage: "fork 기능은 끄고 작업해줘. Phase 1부터 진행해줘 모든 기능을 개발할때까지 계속 진행해야해. (Gateway Protocol Spec v1 기반 4종 도구 구현)"
+  userMessage: "Implementation Task: Phase 4 Replanner Logic - Implement the Replanner system for resilient agent execution."
   taskType: feature
   keywords:
-    - 구현
-    - browser tool
-    - desktop tool
-    - http connector
-    - file i/o
-    - websocket protocol
-    - playwright
-    - 몰트봇 스타일
-
+    - implementation
+    - replanner
+    - failure recovery
+    - resilient agent
+    - alternative tools
+    - path replanning
 repo:
-  gitBranch: main
-  gitStatus: clean
+  gitBranch: "main"
+  gitStatus: "clean"
   openFiles: []
   changedFiles:
+    - src/agents/replanner/types.ts
+    - src/agents/replanner/FailureAnalyzer.ts
+    - src/agents/replanner/AlternativeSelector.ts
+    - src/agents/replanner/PathReplanner.ts
+    - src/agents/replanner/RecoveryLimiter.ts
+    - src/agents/replanner.ts
+    - src/agents/executor.ts
+    - src/agents/planner.ts
     - src/tools/runtime/ToolRuntime.ts
-    - src/tools/runtime/SchemaValidator.ts
-    - src/tools/runtime/ApprovalManager.ts
-    - src/tools/filesystem/FileIOTool.ts
-    - src/tools/filesystem/PathValidator.ts
-    - src/tools/http/HttpTool.ts
-    - src/tools/http/SsrfGuard.ts
-    - src/tools/desktop/SystemRunTool.ts
-    - src/tools/desktop/CommandSanitizer.ts
-    - src/tools/browser/BrowserTool.ts
-    - src/tools/browser/SessionManager.ts
-    - src/gateway/handlers/tools.handler.ts
-    - src/types/index.ts
-    - src/tools/index.ts
-    - src/gateway/server.ts
-    - src/sessions/manager.ts
-    - package.json
-
 signals:
   hasContextMd: true
   hasPendingQuestions: false
@@ -44,61 +32,48 @@ signals:
   hasMockImplementation: false
   apiSpecConfirmed: true
   reactProject: false
-
 estimates:
-  estimatedFiles: 21
-  estimatedLines: 500
-  estimatedTime: 3h
-
+  estimatedFiles: 9
+  estimatedLines: 750
+  estimatedTime: 2h
 phase: complete
-complexity: complex
+complexity: medium
 missingInfo: []
-
 decisions:
   recommendedAgents:
     - pre-flight-check
-    - requirements-analyzer
-    - context-builder
-    - codex-validate-plan
     - implementation-runner
+    - completion-verifier
     - codex-review-code
   skillChain:
     - pre-flight-check
-    - requirements-analyzer
-    - context-builder
-    - codex-validate-plan
     - implementation-runner
     - completion-verifier
     - codex-review-code
     - efficiency-tracker
     - session-logger
   parallelGroups: []
-
 artifacts:
-  tasksRoot: .claude/docs/tasks
-  contextDocPath: .claude/docs/tasks/phase1-gateway-tools/context.md
+  tasksRoot: ".claude/docs/tasks"
+  contextDocPath: ".claude/docs/tasks/phase4-replanner/context.md"
   verificationScript: .claude/agents/verification/verify-changes.sh
-
 tokenBudget:
   specSummaryTrigger: 2000
   splitTrigger: 5
   contextMaxTokens: 8000
   warningThreshold: 0.8
-
 projectMemory:
-  projectId: moonbot
-  boundaryStatus: not_checked
+  projectId: "moon-bot"
+  boundaryStatus: "not_checked"
   boundary:
     violations: []
     needsApproval: []
     reminders: []
   relatedConventions: []
   lastChecked: null
-
 notes:
-  - Spec document provided comprehensive requirements
-  - All 6 phases implemented successfully
+  - Context document exists with detailed requirements
+  - 6 files created, 3 files modified
+  - Alternative tool mapping defined
+  - Acceptance tests T1-T7 defined
   - Build verified: SUCCESS
-  - 5 code review issues fixed (2 CRITICAL, 3 HIGH)
-  - Tests skipped (framework not configured)
-  - Documents created: context.md, flow-report.md, session-log.md

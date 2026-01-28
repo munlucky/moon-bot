@@ -1,4 +1,4 @@
-// Tool execution runtime with validation, approval, and result formatting
+// Tool execution runtime with validation, approval, result formatting, and retry tracking
 
 import { randomUUID } from "crypto";
 import { EventEmitter } from "events";
@@ -16,6 +16,8 @@ export interface ToolInvocation {
   startTime: number;
   endTime?: number;
   result?: ToolResult;
+  retryCount: number;  // Track retry attempts for Replanner
+  parentInvocationId?: string;  // Track original invocation for retries
 }
 
 export interface RuntimeConfig {
@@ -95,6 +97,23 @@ export class ToolRuntime extends EventEmitter {
   }
 
   /**
+   * Get retry count for a tool invocation
+   */
+  getRetryCount(invocationId: string): number {
+    const invocation = this.invocations.get(invocationId);
+    return invocation?.retryCount ?? 0;
+  }
+
+  /**
+   * Get all invocations for a session
+   */
+  getInvocationsBySession(sessionId: string): ToolInvocation[] {
+    return Array.from(this.invocations.values()).filter(
+      (inv) => inv.sessionId === sessionId
+    );
+  }
+
+  /**
    * Invoke a tool with input validation and timeout.
    */
   async invoke(
@@ -102,7 +121,9 @@ export class ToolRuntime extends EventEmitter {
     sessionId: string,
     input: unknown,
     agentId: string,
-    userId: string
+    userId: string,
+    retryCount: number = 0,
+    parentInvocationId?: string
   ): Promise<{ invocationId: string; result?: ToolResult; awaitingApproval?: boolean }> {
     const tool = this.tools.get(toolId);
     if (!tool) {
@@ -153,9 +174,20 @@ export class ToolRuntime extends EventEmitter {
       input,
       status: "running",
       startTime: Date.now(),
+      retryCount,
+      parentInvocationId,
     };
     this.invocations.set(invocationId, invocation);
     this.runningCount++;
+
+    // Log retry attempt
+    if (retryCount > 0) {
+      this.logger.info(`Tool retry invocation: ${toolId}`, {
+        invocationId,
+        retryCount,
+        parentInvocationId,
+      });
+    }
 
     try {
       // Check approval for dangerous tools
@@ -217,7 +249,7 @@ export class ToolRuntime extends EventEmitter {
         invocation.result = formattedResult;
         this.runningCount--;
 
-        this.logger.info(`Tool invoked: ${toolId}`, { durationMs, sessionId });
+        this.logger.info(`Tool invoked: ${toolId}`, { durationMs, sessionId, retryCount });
 
         return { invocationId, result: formattedResult };
       } finally {
@@ -245,7 +277,7 @@ export class ToolRuntime extends EventEmitter {
 
       invocation.result = errorResult;
 
-      this.logger.error(`Tool execution failed: ${toolId}`, { error });
+      this.logger.error(`Tool execution failed: ${toolId}`, { error, retryCount });
 
       return { invocationId, result: errorResult };
     }
@@ -436,5 +468,29 @@ export class ToolRuntime extends EventEmitter {
         this.invocations.delete(id);
       }
     }
+  }
+
+  /**
+   * Get invocation statistics
+   */
+  getStats(): {
+    totalInvocations: number;
+    byStatus: Record<string, number>;
+    avgRetryCount: number;
+  } {
+    const invocations = Array.from(this.invocations.values());
+    const byStatus: Record<string, number> = {};
+    let totalRetryCount = 0;
+
+    for (const inv of invocations) {
+      byStatus[inv.status] = (byStatus[inv.status] || 0) + 1;
+      totalRetryCount += inv.retryCount;
+    }
+
+    return {
+      totalInvocations: invocations.length,
+      byStatus,
+      avgRetryCount: invocations.length > 0 ? totalRetryCount / invocations.length : 0,
+    };
   }
 }
