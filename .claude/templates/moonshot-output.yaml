@@ -1,0 +1,88 @@
+# Moonshot Agent 출력 템플릿 (YAML 형식)
+# JSON 대비 20-30% 토큰 절감 효과
+
+taskType: "feature | modification | bugfix | refactor"
+complexity: "simple | medium | complex"
+phase: "planning | implementation | integration | verification"
+estimatedTime: "1h"
+estimatedFiles: 1
+riskLevel: "low | medium | high"
+
+requiredAgents:
+  - "RequirementsAnalyzer"
+  - "ContextBuilder"
+  - "ImplementationAgent"
+  - "VerificationAgent"
+
+missingInfo:
+  - category: "Screen Definition"
+    priority: "HIGH"
+    question: "Question text..."
+    reason: "Why needed"
+
+recommendations:
+  - "Recommendation 1"
+
+# 🎯 토큰 효율화: 각 에이전트별 최소 페이로드
+agentPayloads:
+  RequirementsAnalyzer:
+    task: "작업 1줄 요약"
+    userRequest: "원본 요청 (50자 이내)"
+    projectPatterns:
+      - "패턴1"
+      - "패턴2"
+    outputFile: ".claude/features/xxx/agreement.md"
+
+  ContextBuilder:
+    agreementFile: ".claude/features/xxx/agreement.md"
+    relevantFilePaths:
+      - "src/pages/xxx/*.tsx"
+    outputFile: ".claude/features/xxx/context.md"
+
+  CodexValidator:
+    mode: "readonly"
+    contextFile: ".claude/features/xxx/context.md"
+    reviewFocus:
+      - "엣지 케이스"
+      - "타입 안정성"
+    relevantFilePaths:
+      - "src/pages/xxx/*.tsx"
+    outputFile: ".claude/features/xxx/validator-feedback.md"
+
+  ImplementationAgent:
+    mode: "write"
+    contextFile: ".claude/features/xxx/context.md"
+    targetFiles:
+      - "src/pages/xxx/Page.tsx"
+      - "src/api/xxx.ts"
+    patterns:
+      entityRequest: "타입 분리 패턴"
+      apiProxy: "axios 래퍼 패턴"
+
+  VerificationAgent:
+    agreementFile: ".claude/features/xxx/agreement.md"
+    implementedFiles:
+      - "src/pages/xxx/Page.tsx"
+    verificationCommands:
+      - "npm run typecheck"
+      - "npm run build"
+
+# 🎯 토큰 최적화 메타 정보
+tokenOptimization:
+  strategy: "minimal-context"
+  format: "yaml"  # JSON 대비 20-30% 토큰 절감
+  sharedSnapshot:
+    featureName: "기능명"
+    agreementFile: ".claude/features/xxx/agreement.md"
+    contextFile: ".claude/features/xxx/context.md"
+    patterns:
+      pattern1: "설명"
+    relevantFilePaths:
+      - "경로만, 내용 X"
+
+  notes:
+    - "파일 내용은 스냅샷에 포함하지 않음"
+    - "에이전트가 필요시 직접 Read 호출"
+    - "이전 단계 출력 파일 경로만 전달"
+    - "병렬 실행 시 공통 스냅샷 1회만 준비"
+    - "YAML 사용으로 JSON 대비 20-30% 토큰 절감"

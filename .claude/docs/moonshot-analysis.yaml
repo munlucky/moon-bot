@@ -1,0 +1,59 @@
+schemaVersion: "1.0"
+request:
+  userMessage: "공식문서가 이거야 확인하고 다시 개선해줘."
+  taskType: modification
+  keywords:
+    - 공식문서
+    - 확인
+    - 개선
+repo:
+  gitBranch: "main"
+  gitStatus: "dirty"
+  openFiles:
+    - .claude/README.md
+    - .claude/CLAUDE.md
+    - .claude/skills/moonshot-orchestrator/SKILL.md
+    - .claude/rules/workflow.md
+    - .claude/rules/quality.md
+  changedFiles:
+    - .claude/CLAUDE.md
+    - .claude/README.md
+    - install-claude.sh
+    - .claude/rules/agents/agent-definition.md
+    - .claude/rules/basic-principles.md
+    - .claude/rules/communication.md
+    - .claude/rules/context-management.md
+    - .claude/rules/docs/documentation.md
+    - .claude/rules/output-format.md
+    - .claude/rules/quality.md
+    - .claude/rules/skills/skill-definition.md
+    - .claude/rules/workflow.md
+signals:
+  hasContextMd: false
+  hasPendingQuestions: false
+  requirementsClear: true
+  implementationReady: true
+  implementationComplete: true
+  hasMockImplementation: false
+  apiSpecConfirmed: false
+estimates:
+  estimatedFiles: 1
+  estimatedLines: 90
+  estimatedTime: "30m"
+phase: verification
+complexity: simple
+missingInfo: []
+decisions:
+  recommendedAgents: []
+  skillChain:
+    - implementation-runner
+    - verify-changes.sh
+  parallelGroups: []
+artifacts:
+  contextDocPath: .claude/docs/tasks/claude-memory-docs/context.md
+  verificationScript: .claude/agents/verification/verify-changes.sh
+notes:
+  - "taskType=modification, confidence=medium"
+  - "complexity=simple, estimated=heuristic"
+  - "implementation: update README with official memory guidance"
+  - "verification: not run"
