@@ -1,96 +1,150 @@
-# Phase 2: Approval System (Lobster)
+# Phase 2: Approval System - Implementation Plan
+
+> Project rules: `.claude/PROJECT.md`
+> Agreement: `.claude/docs/agreements/phase2-approval-system.md`
+> Phase 1 context: `../phase1-gateway-tools/context.md`
+
+## Metadata
+
+- Author: Context Builder Agent
+- Created: 2026-01-28
+- Updated: 2026-01-28
+- Branch: main
+- Complexity: complex
+- Task Type: feature
 
 ## Overview
-승인 요청/대기/재개 흐름을 구현하여 위험 도구(system.run 등)의 실행을 사용자 승인에 연결합니다.
 
-## Background
-- **Phase 1 완료**: ApprovalManager 기본 구조 생성됨
-- **현재 상태**: 승인 로직은 있으나 UI/플로우 연동 필요
-- **다음**: Discord/CLI 승인 UI 연동
+Phase 2 implements the approval flow UI integration for dangerous tool operations (e.g., `system.run`). This connects the Phase 1 infrastructure (ApprovalManager, ToolRuntime) to user-facing surfaces (Discord, CLI, WebSocket).
+
+**Background**: Phase 1 implemented the approval checking logic and pending state storage. Phase 2 completes the user interaction flow - requesting approval, displaying approval UI, handling user responses, and resuming execution.
+
+**Goal**: Enable users to approve/reject dangerous tool executions through Discord buttons, CLI prompts, and WebSocket events.
+
+---
 
 ## Requirements
 
 ### Functional Requirements
-1. **승인 요청 플로우**
-   - 위험 도구 호출 시 자동 승인 요청
-   - Surface(Discord/CLI)로 승인 메시지 발송
-   - 타임아웃 설정 (기본 5분)
 
-2. **승인 대기 상태 관리**
-   - Invocation 상태: `awaiting_approval`
-   - 보류 중인 요청 목록 조회
-   - 만료된 요청 자동 거절
+1. **승인 요청 플로우 (Approval Request Flow)**
+   - When `system.run` is called and approval is required, automatically request approval
+   - Send approval notifications to all active surfaces (Discord/CLI/WS)
+   - Generate unique UUID token for each request (format: `approval-{uuid}`)
+   - Set timeout (default 5 minutes, configurable)
 
-3. **승인/거절 처리**
-   - Surface에서 승인/거절 응답 수신
-   - 승인 시 도구 재실행
-   - 거절 시 에러 반환
+2. **승인 대기 상태 관리 (Approval State Management)**
+   - Invocation state transitions to `awaiting_approval`
+   - Maintain persistent pending approval list
+   - Auto-reject expired requests
+   - Support listing pending approvals
 
-4. **채널별 승인 UI 연동**
-   - Discord: Embed 메시지 + 버튼
-   - CLI: 대화형 프롬프트
-   - WebSocket: 실시간 이벤트
+3. **승인/거절 처리 (Approval/Rejection Handling)**
+   - Receive approval/rejection responses from surfaces
+   - On approval: Re-execute tool and return result
+   - On rejection: Return `APPROVAL_DENIED` error
+   - Remove from pending store after resolution
+
+4. **채널별 승인 UI 연동 (Surface-Specific UI)**
+   - **Discord**: Embed message with Green [Approve] / Red [Reject] buttons
+   - **CLI**: Interactive prompt with timeout, commands to list/approve/deny
+   - **WebSocket**: Real-time events (`approval.requested`, `approval.updated`)
 
 ### Non-Functional Requirements
-- **보안**: 승인 토큰 UUID로 생성, 위조 방지
-- **신뢰성**: 승인 대기 목록 영구 저장
-- **성능**: 승인 응답 100ms 이내 처리
+
+| Requirement | Specification |
+|-------------|---------------|
+| Security | UUID v4 tokens (cryptographically random), one-time use |
+| Reliability | Pending approvals persist across restarts |
+| Performance | Approval response processed within 100ms |
+| Audit Trail | All approvals logged permanently |
+
+### Out of Scope
+
+- Multi-user concurrent approval (Future phase)
+- Approval permission levels (Future phase)
+- Approval history UI (Future phase)
+
+---
 
 ## Technical Architecture
 
-### Components
+### Component Diagram
+
 ```
-┌─────────────────────────────────────────────────────────┐
-│                   Surface Layer                         │
-├─────────────┬─────────────┬─────────────┬──────────────┤
-│  Discord    │    CLI      │  WebSocket  │  Future UI   │
-│  Channel    │  Commands   │   Events    │              │
-└──────┬──────┴──────┬──────┴──────┬──────┴──────────────┘
+                                    ┌─────────────────────────────────────────┐
+                                    │           Surface Layer                 │
+├─────────────┬─────────────┬──────┴──────┬─────────────┬──────────────────┤
+│  Discord    │    CLI      │ WebSocket   │  Future UI  │   Notification    │
+│  Adapter    │  Commands   │   Events    │              │   Broadcaster    │
+└──────┬──────┴──────┬──────┴──────┬──────┴─────────────┴──────────────────┘
        │             │             │
+       │  DiscordApprovalHandler    │
+       │  - sendApprovalRequest()   │
+       │  - handleButtonInteraction()│
        └─────────────┼─────────────┘
                      │
        ┌─────────────▼─────────────┐
-       │   Approval Flow Manager    │
+       │   ApprovalFlowManager      │
        │  - requestApproval()       │
        │  - handleResponse()        │
        │  - expirePending()         │
        └─────────────┬─────────────┘
                      │
        ┌─────────────▼─────────────┐
-       │     ApprovalManager        │
-       │  - checkApproval()         │
-       │  - persistRule()           │
+       │     ApprovalStore         │
+       │  - save(request)          │
+       │  - get(requestId)         │
+       │  - listPending()          │
+       │  - remove(requestId)      │
        └─────────────┬─────────────┘
                      │
        ┌─────────────▼─────────────┐
        │      ToolRuntime          │
        │  - invoke()               │
        │  - approveRequest()        │
+       │  - getPendingApprovals()  │
        └───────────────────────────┘
 ```
 
 ### Data Flow
+
 ```
-1. Tool Invoke (system.run)
+1. AI Agent calls system.run (dangerous tool)
    ↓
-2. ApprovalManager.checkApproval() → not approved
+2. ToolRuntime.invoke() → ApprovalManager.checkApproval() → not approved
    ↓
-3. Flow Manager.requestApproval()
+3. ToolRuntime sets invocation.status = "awaiting_approval"
    ↓
-4. Surface Notification (Discord/CLI/WS)
+4. ApprovalFlowManager.requestApproval(invocation)
    ↓
-5. User Response
+5. ApprovalStore.save(request) → generates UUID token
    ↓
-6. Flow Manager.handleResponse()
+6. Notification Broadcaster sends to all surfaces:
+   - Discord: DiscordApprovalHandler.sendRequest() → Embed + Buttons
+   - CLI: CLIApprovalHandler.showPrompt() → Y/N prompt
+   - WebSocket: WsApprovalHandler.broadcast() → approval.requested event
    ↓
-7. ToolRuntime.approveRequest(true)
+7. User clicks Discord button / types CLI command / sends WS response
    ↓
-8. Tool Re-execution
+8. ApprovalFlowManager.handleResponse(requestId, approved, userId)
+   ↓
+9. ToolRuntime.approveRequest(invocationId, approved)
+   ↓
+10. If approved: Re-execute tool → return result
+    If rejected: Return APPROVAL_DENIED error
+   ↓
+11. ApprovalStore.remove(requestId)
+   ↓
+12. Broadcast approval.updated event to all surfaces
 ```
+
+---
 
 ## Implementation Plan
 
 ### Files to Create (7)
+
 ```
 src/tools/approval/
   ├─ ApprovalFlowManager.ts      # 승인 플로우 코디네이터
@@ -106,78 +160,428 @@ src/channels/
 ```
 
 ### Files to Modify (4)
-- `src/tools/runtime/ApprovalManager.ts` - 플로우 매니저 연동
-- `src/tools/runtime/ToolRuntime.ts` - 승인 요청 이벤트 발행
-- `src/gateway/handlers/tools.handler.ts` - 승인 응답 핸들러
-- `src/channels/discord.ts` - 승인 메시지 처리
 
-## Acceptance Tests
+| File | Changes |
+|------|---------|
+| `src/tools/runtime/ApprovalManager.ts` | Add flow manager integration hook |
+| `src/tools/runtime/ToolRuntime.ts` | Add approval requested event emission |
+| `src/gateway/handlers/tools.handler.ts` | Add `approval.respond` handler |
+| `src/channels/discord.ts` | Add approval message component handling |
 
-### T1: 승인 요청 생성
-- Given: system.run 호출, 승인 필요
-- When: ApprovalFlowManager.requestApproval()
-- Then: UUID 생성, Surface 알림 발송
+---
 
-### T2: Discord 승인 UI
-- Given: 승인 요청 대기 중
-- When: Discord Embed 전송
-- Then: 버튼 [허용] [거부] 표시
+## Detailed Specifications
 
-### T3: CLI 승인 UI
-- Given: 승인 요청 대기 중
-- When: CLI 프롬프트 표시
-- Then: Y/N 입력 대기
+### 1. Approval Types (`src/tools/approval/types.ts`)
 
-### T4: 승인 후 재실행
-- Given: 승인 요청 승인됨
-- When: ToolRuntime.approveRequest(true)
-- Then: 도구 재실행, 결과 반환
+```typescript
+import type { ToolInvocation } from "../../types/index.js";
 
-### T5: 거절 처리
-- Given: 승인 요청 거부됨
-- When: ToolRuntime.approveRequest(false)
-- Then: ERR_FORBIDDEN 반환
+export interface ApprovalRequest {
+  id: string;                    // UUID v4, format: "approval-{uuid}"
+  invocationId: string;          // ToolInvocation.id
+  toolId: string;                // e.g., "system.run"
+  sessionId: string;
+  input: unknown;                // Tool input (for display)
+  status: "pending" | "approved" | "rejected" | "expired";
+  userId: string;                // Requester
+  createdAt: number;
+  expiresAt: number;             // createdAt + timeout
+  respondedBy?: string;          // Approver/rejecter
+  respondedAt?: number;
+}
 
-### T6: 타임아웃 처리
-- Given: 승인 요청 5분 경과
-- When: expirePending() 실행
-- Then: 자동 거절, 상태 갱신
+export interface ApprovalResponse {
+  requestId: string;
+  approved: boolean;
+  userId: string;
+  timestamp: number;
+}
+
+export interface ApprovalNotification {
+  request: ApprovalRequest;
+  surfaces: Array<"discord" | "cli" | "websocket">;
+}
+
+export interface DiscordButtonComponent {
+  type: 2;  // BUTTON
+  style: 3 | 4;  // SUCCESS (green) or DANGER (red)
+  label: string;
+  custom_id: string;  // format: "approval_{requestId}_{approve|reject}"
+}
+
+export interface DiscordEmbedMessage {
+  title: string;
+  description: string;
+  color: number;  // Yellow for pending
+  fields: Array<{ name: string; value: string; inline: boolean }>;
+  components: Array<{ type: 1; components: DiscordButtonComponent[] }>;
+}
+```
+
+### 2. ApprovalStore (`src/tools/approval/ApprovalStore.ts`)
+
+**Purpose**: Persistent storage for pending approvals
+
+**Interface**:
+```typescript
+export class ApprovalStore {
+  private storePath: string;  // ~/.moonbot/pending-approvals.json
+  private requests: Map<string, ApprovalRequest>;
+
+  constructor(storePath?: string);
+  async load(): Promise<void>;
+  async save(): Promise<void>;
+  async add(request: ApprovalRequest): Promise<void>;
+  get(requestId: string): ApprovalRequest | undefined;
+  listPending(): ApprovalRequest[];
+  async remove(requestId: string): Promise<void>;
+  async updateStatus(requestId: string, status: ApprovalRequest["status"], respondedBy: string): Promise<void>;
+  expirePending(): string[];  // Returns expired request IDs
+}
+```
+
+**Storage Format** (`~/.moonbot/pending-approvals.json`):
+```json
+{
+  "requests": [
+    {
+      "id": "approval-uuid",
+      "invocationId": "invocation-uuid",
+      "toolId": "system.run",
+      "sessionId": "session-uuid",
+      "input": { "argv": ["git", "status"], "cwd": "/path/to/workspace" },
+      "status": "pending",
+      "userId": "user-id",
+      "createdAt": 1706457600000,
+      "expiresAt": 1706460600000
+    }
+  ]
+}
+```
+
+### 3. ApprovalFlowManager (`src/tools/approval/ApprovalFlowManager.ts`)
+
+**Purpose**: Coordinate approval flow between ToolRuntime and surfaces
+
+**Interface**:
+```typescript
+export class ApprovalFlowManager {
+  private store: ApprovalStore;
+  private handlers: Map<string, ApprovalHandler>;
+  private eventEmitter: EventEmitter;
+
+  constructor(store: ApprovalStore);
+  registerHandler(surface: string, handler: ApprovalHandler): void;
+
+  // Called by ToolRuntime when approval needed
+  async requestApproval(invocation: ToolInvocation): Promise<string>;  // Returns requestId
+
+  // Called by surfaces when user responds
+  async handleResponse(requestId: string, approved: boolean, userId: string): Promise<ToolResult>;
+
+  // Periodic cleanup
+  async expirePending(): Promise<void>;
+
+  // Query
+  listPending(): ApprovalRequest[];
+  get(requestId: string): ApprovalRequest | undefined;
+}
+
+interface ApprovalHandler {
+  sendRequest(request: ApprovalRequest): Promise<void>;
+  sendUpdate(request: ApprovalRequest): Promise<void>;
+}
+```
+
+### 4. Discord Approval Handler (`src/tools/approval/handlers/discord-approval.ts`)
+
+**Purpose**: Send Discord Embed with approval buttons
+
+**Interface**:
+```typescript
+export class DiscordApprovalHandler implements ApprovalHandler {
+  private adapter: DiscordAdapter;
+
+  constructor(adapter: DiscordAdapter);
+
+  async sendRequest(request: ApprovalRequest): Promise<void>;
+  async sendUpdate(request: ApprovalRequest): Promise<void>;
+  formatEmbed(request: ApprovalRequest): DiscordEmbedMessage;
+}
+
+export function createApprovalButtons(requestId: string): DiscordButtonComponent[];
+export function parseButtonCustomId(customId: string): { requestId: string; action: "approve" | "reject" } | null;
+```
+
+**Discord Embed Format**:
+```
+🛡️ Tool Execution Approval Required
+
+Tool: system.run
+Command: git status
+CWD: /path/to/workspace
+
+Requested by: @user
+Expires in: 5 minutes
+
+[✅ Approve]  [❌ Reject]
+```
+
+### 5. CLI Approval Handler (`src/tools/approval/handlers/cli-approval.ts`)
+
+**Purpose**: Interactive CLI prompts and commands
+
+**Interface**:
+```typescript
+export class CLIApprovalHandler implements ApprovalHandler {
+  async sendRequest(request: ApprovalRequest): Promise<void>;
+  async sendUpdate(request: ApprovalRequest): Promise<void>;
+  async promptUser(request: ApprovalRequest): Promise<boolean>;
+}
+
+// CLI Commands
+export class ApprovalCommands {
+  private flowManager: ApprovalFlowManager;
+
+  list(): void;
+  approve(requestId: string): Promise<void>;
+  deny(requestId: string): Promise<void>;
+}
+```
+
+**CLI Commands**:
+```bash
+moltbot approvals list              # List pending approvals
+moltbot approvals approve <id>      # Approve request
+moltbot approvals deny <id>         # Deny request
+```
+
+### 6. WebSocket Approval Handler (`src/tools/approval/handlers/ws-approval.ts`)
+
+**Purpose**: Broadcast approval events to WebSocket clients
+
+**Interface**:
+```typescript
+export class WsApprovalHandler implements ApprovalHandler {
+  private gateway: GatewayServer;
+
+  constructor(gateway: GatewayServer);
+
+  async sendRequest(request: ApprovalRequest): Promise<void>;
+  async sendUpdate(request: ApprovalRequest): Promise<void>;
+}
+
+// Events
+interface ApprovalRequestedEvent {
+  type: "approval.requested";
+  data: ApprovalRequest;
+}
+
+interface ApprovalUpdatedEvent {
+  type: "approval.updated";
+  data: {
+    requestId: string;
+    status: "approved" | "rejected" | "expired";
+    result?: ToolResult;
+  };
+}
+```
+
+---
+
+## Default Decisions (Applied)
+
+| ID | Decision | Applied Value |
+|----|----------|---------------|
+| D1 | Discord UI 패턴 | Message Component Buttons (Green Approve / Red Reject) |
+| D2 | CLI UI 패턴 | Readline prompt with timeout |
+| D3 | WebSocket 이벤트 | `approval.updated` with `{requestId, status, result}` |
+| D4 | 타임아웃 설정 | `approval.timeoutSeconds` (default: 300) |
+
+---
 
 ## Integration Points
 
-1. **ToolRuntime.invoke()**
-   - 승인 필요 시 `approval.requested` 이벤트 발행
-   - 반환: `{ invocationId, awaitingApproval: true }`
+### 1. ToolRuntime.invoke() Modification
 
-2. **Discord Channel**
-   - 승인 요청 수신 → Embed 메시지 전송
-   - 버튼 클릭 → approval.respond RPC 호출
+**Current behavior**: Returns `{ invocationId, awaitingApproval: true }` when approval required
 
-3. **CLI Commands**
-   - `moltbot approvals list` - 대기 목록
-   - `moltbot approvals approve <id>` - 승인
-   - `moltbot approvals deny <id>` - 거부
+**Add**: Emit `approval.requested` event
 
-4. **Gateway WebSocket**
-   - `approval.requested` 이벤트 브로드캐스트
-   - `approval.respond` 메서드 등록
+```typescript
+// In ToolRuntime.invoke()
+if (approvalRequired) {
+  invocation.status = "awaiting_approval";
+
+  // EMIT EVENT for ApprovalFlowManager
+  this.emit("approval.requested", {
+    invocationId,
+    toolId,
+    input,
+    sessionId
+  });
+
+  return { invocationId, awaitingApproval: true };
+}
+```
+
+### 2. Discord Channel Extension
+
+**Add** (`src/channels/discord.ts`):
+```typescript
+// Handle interaction create events (button clicks)
+this.client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isButton()) return;
+
+  const parsed = parseButtonCustomId(interaction.customId);
+  if (!parsed || !parsed.action) return;
+
+  // Call approval.respond RPC
+  await this.gateway.call("approval.respond", {
+    requestId: parsed.requestId,
+    approved: parsed.action === "approve",
+    userId: interaction.user.id
+  });
+
+  await interaction.update({ content: "Response recorded", components: [] });
+});
+```
+
+### 3. Gateway RPC Handler Extension
+
+**Add** (`src/gateway/handlers/tools.handler.ts`):
+```typescript
+// approval.respond: Handle approval response from surfaces
+handlers.set("approval.respond", async (params) => {
+  const { requestId, approved, userId } = params as {
+    requestId: string;
+    approved: boolean;
+    userId: string;
+  };
+
+  return flowManager.handleResponse(requestId, approved, userId);
+});
+
+// approval.list: Get pending approvals
+handlers.set("approval.list", async () => {
+  return {
+    pending: flowManager.listPending()
+  };
+});
+```
+
+### 4. Configuration Extension
+
+**Add** (`~/.moonbot/config.json`):
+```json
+{
+  "approval": {
+    "timeoutSeconds": 300,
+    "enabledSurfaces": ["discord", "cli", "websocket"],
+    "autoExpire": true
+  }
+}
+```
+
+---
+
+## Acceptance Tests (Completion Criteria)
+
+| ID | Test Description | Type | File | Status |
+|----|------------------|------|------|--------|
+| T1 | [Approval] Request generates UUID token | Unit | `ApprovalFlowManager.test.ts` | PENDING |
+| T2 | [Approval] Request persists to store | Unit | `ApprovalStore.test.ts` | PENDING |
+| T3 | [Discord] Embed sent with approve/reject buttons | Integration | `discord-approval.test.ts` | PENDING |
+| T4 | [Discord] Button click triggers approval.respond | Integration | `discord-approval.test.ts` | PENDING |
+| T5 | [CLI] Prompt accepts Y/N input | Unit | `cli-approval.test.ts` | PENDING |
+| T6 | [CLI] Commands: list, approve, deny | Integration | `cli-approval.test.ts` | PENDING |
+| T7 | [Approval] Approved request re-executes tool | Integration | `ApprovalFlowManager.test.ts` | PENDING |
+| T8 | [Approval] Rejected request returns error | Unit | `ApprovalFlowManager.test.ts` | PENDING |
+| T9 | [Approval] Timeout auto-rejects pending request | Unit | `ApprovalStore.test.ts` | PENDING |
+| T10 | [WebSocket] Emits approval.requested event | Integration | `ws-approval.test.ts` | PENDING |
+| T11 | [WebSocket] Emits approval.updated event | Integration | `ws-approval.test.ts` | PENDING |
+| T12 | [Security] Token is UUID v4 format | Security | `ApprovalFlowManager.test.ts` | PENDING |
+| T13 | [Security] One-time token use enforced | Security | `ApprovalFlowManager.test.ts` | PENDING |
+
+**Completion Condition**: All tests PASS
+
+---
 
 ## Security Considerations
 
-- 승인 토큰은 UUID v4 (예측 불가능)
-- 승인 유효시간 5분 (configurable)
-- Surface 인증된 사용자만 승인 가능
-- 승인 로그 영구 저장 (audit trail)
+| Concern | Mitigation |
+|---------|-----------|
+| 토큰 위조 (Token forgery) | UUID v4 (cryptographically random, unpredictable) |
+| 재생 공격 (Replay attack) | One-time tokens, invalidated after use |
+| 미인증 승인 (Unauthorized approval) | Surface authentication required (Discord user, CLI session) |
+| 감사 추적 (Audit trail) | All approvals logged with userId, timestamp |
+| 타임아웃 (Timeout) | Approval valid for 5 minutes (configurable) |
+| 경쟁 조건 (Race condition) | Update status atomically, check before re-execution |
 
-## Open Questions
+---
 
-| 질문 | 상태 |
-|------|------|
-| Discord 버튼 커스텀 ID 포맷 | pending |
-| CLI 승인 시 비밀번호 입력 여부 | pending |
-| 다중 사용자 동시 승인 처리 | pending |
+## Risks and Mitigations
+
+| Risk | Severity | Mitigation |
+|------|----------|------------|
+| Discord API rate limit | MEDIUM | Use webhook for high-volume, batch requests |
+| CLI prompt blocks async flow | MEDIUM | Use non-blocking readline with timeout |
+| WebSocket connection drops | LOW | Auto-reconnect with pending approval sync |
+| Pending approval file corruption | MEDIUM | Atomic writes, backup on save |
+| Multiple surfaces approve simultaneously | LOW | First response wins, others ignored |
+
+---
+
+## Checkpoints
+
+- [ ] ApprovalStore implementation with persistence
+- [ ] ApprovalFlowManager coordinates flow
+- [ ] Discord handler sends Embed + buttons
+- [ ] Discord button interaction handling
+- [ ] CLI prompt with timeout
+- [ ] CLI commands (list, approve, deny)
+- [ ] WebSocket event broadcasting
+- [ ] ToolRuntime emits approval.requested
+- [ ] Gateway adds approval.respond handler
+- [ ] All acceptance tests passing
+- [ ] Security checklist verified
+- [ ] Build succeeds (`npm run build`)
+- [ ] Type check passes (`npx tsc --noEmit`)
+
+---
+
+## Dependencies
+
+### Phase 1 (Completed)
+- ToolRuntime with `awaiting_approval` state
+- ApprovalManager with allowlist/denylist
+- Gateway RPC handlers (tools.invoke, tools.approve)
+- DiscordAdapter with basic message handling
+
+### New Dependencies
+- **Discord.js**: Message components, interactions (already in Phase 1)
+- **readline**: Built-in Node.js module for CLI
+- **EventEmitter**: Built-in Node.js module for internal events
+
+---
 
 ## References
+
 - Phase 1 context: `../phase1-gateway-tools/context.md`
+- Agreement: `../../agreements/phase2-approval-system.md`
 - Spec: `agent_system_spec.md` (Lobster Approval System)
 - PRD: `local_ai_agent_prd.md` (Phase 2)
+
+---
+
+## Archive Index
+
+| Version | File | Content | Date |
+|---------|------|---------|------|
+| v1 | context.md | Initial implementation plan | 2026-01-28 |
+
+---
+
+**Document Status**: Ready for implementation
+**Next Step**: Execute implementation (medium complexity)

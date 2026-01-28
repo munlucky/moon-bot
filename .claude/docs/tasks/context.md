@@ -57,15 +57,30 @@
 
 ---
 
-### 4. Lobster Approval System - PARTIALLY RESOLVED
+### 4. Lobster Approval System - PHASE 2 UNCERTAINTIES
 
-**Done**: Types defined in `src/types/index.ts`
-- `ApprovalRequest`: `{id, sessionId, toolId, input, userId, createdAt, expiresAt}`
-- `ApprovalResponse`: `{requestId, approved, userId, timestamp}`
+**Done** (Phase 1):
+- Types defined: `ApprovalRequest`, `ApprovalResponse`, `ToolSpec.requiresApproval`
+- `ApprovalManager`: Command allowlist/denylist policy checker
+- RPC handlers: `tools.approve`, `tools.getPending`, `tools.getInvocation`
+- Gateway: WebSocket server with `broadcast()`, `sendToClient()` methods
 
-**Missing**:
-- Approval flow implementation (UI, timeout handling, rejection logic)
-- Integration with ToolKit for `requiresApproval` tools
+**Phase 2: Approval Flow UI Integration - UNCERTAINTIES DETECTED**:
+
+| Category | Priority | Question | Reason |
+|----------|----------|----------|--------|
+| **UI Interaction** | HIGH | Discord 승인 UI: 버튼 컴포넌트 vs 슬래시 명령어? | 인터랙션 컴포넌트(API)로 승인/거절 버튼 제공 필요 |
+| **CLI UI** | MEDIUM | CLI 승인 방식: 프롬프트(y/n) vs 별도 명령어? | 간단한 y/n 프롬프트가 사용자 친화적 |
+| **Timeout Policy** | MEDIUM | 승인 타임아웃 기본값? Config 가능 여부? | 5분 권장, Config로 설정 가능하게 |
+| **WebSocket Events** | MEDIUM | 승인 상태 변화 시 푸시 방법? 메서드/파라미터? | `approval.updated` 이벤트 정의 필요 |
+| **Session Resume** | HIGH | 승인 대기 후 재개 시 실행 컨텍스트 복원? | ToolRuntime이 승인 완료 시 실행 재개 로직 필요 |
+| **Timeout Behavior** | MEDIUM | 타임아웃 시 자동 거절 후 알림? | 만료된 요청 자동 정리 및 사용자 알림 |
+
+**Suggested Implementation Approach**:
+1. Discord: Message Component Buttons (Green/Red)
+2. CLI: Readline prompt with timeout
+3. WebSocket: `approval.updated` notification with `{requestId, status, result}`
+4. Config: `approval.timeoutSeconds` (default: 300)
 
 ---
 
@@ -91,7 +106,7 @@
 
 ## Signals
 
-- `hasPendingQuestions`: true (3 partially resolved, 1 unresolved)
+- `hasPendingQuestions`: true (Phase 2: 6 uncertainties detected for approval flow)
 - `hasContextMd`: true
 - `hasExternalDeps`: ws (WebSocket), discord.js (planned)
 

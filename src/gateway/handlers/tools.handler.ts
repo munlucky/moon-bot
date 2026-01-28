@@ -3,13 +3,15 @@
 import type { JsonRpcHandler } from "../json-rpc.js";
 import type { ToolRuntime } from "../../tools/runtime/ToolRuntime.js";
 import type { SystemConfig } from "../../types/index.js";
+import type { ApprovalFlowManager } from "../../tools/approval/ApprovalFlowManager.js";
 
 /**
  * Create tools RPC handlers map.
  */
 export function createToolHandlers(
   runtime: ToolRuntime,
-  config: SystemConfig
+  config: SystemConfig,
+  flowManager?: ApprovalFlowManager
 ): Map<string, JsonRpcHandler> {
   const handlers = new Map<string, JsonRpcHandler>();
 
@@ -88,6 +90,44 @@ export function createToolHandlers(
       startTime: invocation.startTime,
       endTime: invocation.endTime,
       result: invocation.result,
+    };
+  });
+
+  // approval.respond: Handle approval response from surfaces
+  handlers.set("approval.respond", async (params) => {
+    if (!flowManager) {
+      throw new Error("Approval flow manager not configured");
+    }
+
+    const { requestId, approved, userId } = params as {
+      requestId: string;
+      approved: boolean;
+      userId: string;
+    };
+
+    return flowManager.handleResponse(requestId, approved, userId);
+  });
+
+  // approval.list: Get pending approval requests
+  handlers.set("approval.list", async () => {
+    if (!flowManager) {
+      return { pending: [], count: 0 };
+    }
+
+    const pending = flowManager.listPending();
+
+    return {
+      pending: pending.map((p) => ({
+        id: p.id,
+        invocationId: p.invocationId,
+        toolId: p.toolId,
+        sessionId: p.sessionId,
+        input: p.input,
+        status: p.status,
+        createdAt: p.createdAt,
+        expiresAt: p.expiresAt,
+      })),
+      count: pending.length,
     };
   });
 

@@ -1,6 +1,7 @@
 // Tool execution runtime with validation, approval, and result formatting
 
 import { randomUUID } from "crypto";
+import { EventEmitter } from "events";
 import type { ToolSpec, ToolContext, ToolResult, SystemConfig } from "../../types/index.js";
 import { SchemaValidator } from "./SchemaValidator.js";
 import { ApprovalManager } from "./ApprovalManager.js";
@@ -24,7 +25,7 @@ export interface RuntimeConfig {
   enableApprovals: boolean;
 }
 
-export class ToolRuntime {
+export class ToolRuntime extends EventEmitter {
   private tools = new Map<string, ToolSpec>();
   private invocations = new Map<string, ToolInvocation>();
   private approvalManager: ApprovalManager;
@@ -33,7 +34,13 @@ export class ToolRuntime {
   private logger: Logger;
   private runningCount = 0;
 
+  static readonly Events = {
+    APPROVAL_REQUESTED: "approval.requested",
+    APPROVAL_RESOLVED: "approval.resolved",
+  } as const;
+
   constructor(systemConfig: SystemConfig, runtimeConfig: Partial<RuntimeConfig> = {}) {
+    super();
     this.systemConfig = systemConfig;
     this.config = {
       workspaceRoot: runtimeConfig.workspaceRoot ?? process.cwd(),
@@ -163,6 +170,16 @@ export class ToolRuntime {
 
         if (approvalRequired) {
           invocation.status = "awaiting_approval";
+
+          // Emit event for ApprovalFlowManager
+          this.emit(ToolRuntime.Events.APPROVAL_REQUESTED, {
+            invocationId,
+            toolId,
+            input,
+            sessionId,
+            userId,
+          });
+
           return { invocationId, awaitingApproval: true };
         }
       }
