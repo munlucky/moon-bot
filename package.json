@@ -1,0 +1,47 @@
+{
+  "name": "moonbot",
+  "version": "0.1.0",
+  "description": "Local-first AI Agent System based on Moltbot framework",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "moonbot": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "gateway": "node dist/gateway/index.js",
+    "gateway:watch": "bun run src/gateway/index.ts",
+    "test": "bun test",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\""
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.33.0",
+    "chokidar": "^4.0.0",
+    "discord.js": "^14.15.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.3.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "keywords": [
+    "ai-agent",
+    "local-first",
+    "websocket",
+    "json-rpc",
+    "discord",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT"
+}

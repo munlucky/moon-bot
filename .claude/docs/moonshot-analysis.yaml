@@ -1,59 +1,105 @@
 schemaVersion: "1.0"
 request:
-  userMessage: "공식문서가 이거야 확인하고 다시 개선해줘."
-  taskType: modification
+  userMessage: "local_ai_agent_prd.md, agent_system_spec.md 문서들을 확인하고 개발진행해줘 내가 확인몰하니까 너가 추천하는 방향으로 진행해줘"
+  taskType: feature
   keywords:
-    - 공식문서
-    - 확인
-    - 개선
+    - ai-agent
+    - websocket
+    - json-rpc
+    - discord
+    - typescript
+    - moltbot
 repo:
-  gitBranch: "main"
-  gitStatus: "dirty"
-  openFiles:
-    - .claude/README.md
-    - .claude/CLAUDE.md
-    - .claude/skills/moonshot-orchestrator/SKILL.md
-    - .claude/rules/workflow.md
-    - .claude/rules/quality.md
+  gitBranch: main
+  gitStatus: dirty
+  openFiles: []
   changedFiles:
-    - .claude/CLAUDE.md
-    - .claude/README.md
-    - install-claude.sh
-    - .claude/rules/agents/agent-definition.md
-    - .claude/rules/basic-principles.md
-    - .claude/rules/communication.md
-    - .claude/rules/context-management.md
-    - .claude/rules/docs/documentation.md
-    - .claude/rules/output-format.md
-    - .claude/rules/quality.md
-    - .claude/rules/skills/skill-definition.md
-    - .claude/rules/workflow.md
+    - src/types/index.ts
+    - src/config/index.ts
+    - src/utils/logger.ts
+    - src/gateway/json-rpc.ts
+    - src/gateway/server.ts
+    - src/gateway/index.ts
+    - src/channels/discord.ts
+    - src/channels/index.ts
+    - src/agents/planner.ts
+    - src/agents/executor.ts
+    - src/tools/index.ts
+    - src/sessions/manager.ts
+    - src/cron/manager.ts
+    - src/auth/pairing.ts
+    - src/cli.ts
+    - src/index.ts
+    - package.json
+    - tsconfig.json
+    - .gitignore
+    - .claude/docs/tasks/local-ai-agent/session-logs/day-2025-01-28.md
+    - .claude/docs/tasks/local-ai-agent/flow-report.md
 signals:
   hasContextMd: false
   hasPendingQuestions: false
   requirementsClear: true
   implementationReady: true
   implementationComplete: true
-  hasMockImplementation: false
+  hasMockImplementation: true
   apiSpecConfirmed: false
+  reactProject: false
 estimates:
-  estimatedFiles: 1
-  estimatedLines: 90
-  estimatedTime: "30m"
-phase: verification
-complexity: simple
+  estimatedFiles: 40
+  estimatedLines: 5000
+  estimatedTime: 50h
+phase: complete
+complexity: complex
 missingInfo: []
 decisions:
-  recommendedAgents: []
+  recommendedAgents:
+    - moonshot-classify-task
+    - moonshot-evaluate-complexity
+    - moonshot-detect-uncertainty
+    - moonshot-decide-sequence
+    - completion-verifier
+    - codex-review-code
+    - session-logger
+    - efficiency-tracker
   skillChain:
-    - implementation-runner
-    - verify-changes.sh
-  parallelGroups: []
+    - moonshot-classify-task
+    - moonshot-evaluate-complexity
+    - moonshot-detect-uncertainty
+    - moonshot-decide-sequence
+    - completion-verifier
+    - codex-review-code
+    - session-logger
+    - efficiency-tracker
+  parallelGroups:
+    - efficiency-tracker
+    - session-logger
 artifacts:
-  contextDocPath: .claude/docs/tasks/claude-memory-docs/context.md
+  tasksRoot: ".claude/docs/tasks"
+  contextDocPath: ".claude/docs/tasks/local-ai-agent/context.md"
   verificationScript: .claude/agents/verification/verify-changes.sh
+  sessionLog: ".claude/docs/tasks/local-ai-agent/session-logs/day-2025-01-28.md"
+  flowReport: ".claude/docs/tasks/local-ai-agent/flow-report.md"
+tokenBudget:
+  specSummaryTrigger: 2000
+  splitTrigger: 5
+  contextMaxTokens: 8000
+  warningThreshold: 0.8
+projectMemory:
+  projectId: "moon-bot"
+  boundaryStatus: "not_checked"
+  boundary:
+    violations: []
+    needsApproval: []
+    reminders: []
+  relatedConventions: []
+  lastChecked: "2025-01-28T09:00:00Z"
 notes:
-  - "taskType=modification, confidence=medium"
-  - "complexity=simple, estimated=heuristic"
-  - "implementation: update README with official memory guidance"
-  - "verification: not run"
+  - "구현 완료: 16개 파일, ~1,600줄 코드"
+  - "TypeScript 컴파일 성공"
+  - "HIGH Priority 보안 이슈 5건 (✅ 모두 수정 완료)"
+  - "MEDIUM Priority 이슈 4건 수정 완료 (TODO 1건 유지)"
+  - "테스트 미정의 (프로토타입/POC)"
+  - "세션 로그 생성: day-2025-01-28.md"
+  - "플로우 리포트 생성: flow-report.md"
+  - "보안 수정: JSON-RPC 검증, 경로 순회 방지, 토큰 해시, 페어링 코드 재생 방지"
+  - "기능 개선: Cron 매일 반복, 페이지네이션, 속도 제한, Logger 에러 처리"
