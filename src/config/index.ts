@@ -3,7 +3,7 @@
 import fs from "fs";
 import path from "path";
 import { homedir } from "os";
-import type { SystemConfig } from "../types/index.js";
+import type { SystemConfig, LLMConfig } from "../types/index.js";
 
 const DEFAULT_CONFIG_PATH = path.join(homedir(), ".moonbot", "config.json");
 const DEFAULT_STORAGE_BASE = path.join(homedir(), ".moonbot");
@@ -63,7 +63,93 @@ function applyEnvironmentVariables(config: SystemConfig): SystemConfig {
     result.gateways[0].host = process.env.MOONBOT_GATEWAY_HOST;
   }
 
+  // LLM configuration
+  result.llm = applyLLMEnvironmentVariables(config.llm);
+
   return result;
+}
+
+/**
+ * Apply LLM environment variables to config
+ * Auto-detects provider based on available API keys
+ */
+function applyLLMEnvironmentVariables(llmConfig: LLMConfig | undefined): LLMConfig | undefined {
+  const llm = llmConfig ? { ...llmConfig } : {};
+
+  // Provider type from env
+  if (process.env.LLM_PROVIDER) {
+    llm.provider = process.env.LLM_PROVIDER as "openai" | "glm";
+  }
+
+  // OpenAI configuration
+  if (process.env.OPENAI_API_KEY) {
+    llm.apiKey = process.env.OPENAI_API_KEY;
+    if (!llm.model) {
+      llm.model = "gpt-4o";
+    }
+  }
+
+  // GLM / Z.AI configuration
+  // Support both ZAI_* (new, preferred) and GLM_* (legacy)
+  const zaiApiKey = process.env.ZAI_API_KEY || process.env.GLM_API_KEY;
+  if (zaiApiKey) {
+    llm.glmApiKey = zaiApiKey;
+
+    // Use Coding API endpoint setting
+    const useCodingAPI = process.env.ZAI_USE_CODING_API === "true" || process.env.GLM_USE_CODING_API === "true";
+    if (useCodingAPI) {
+      llm.glmUseCodingAPI = true;
+      // glm-4.7 for Coding API
+      if (!llm.glmModel) {
+        llm.glmModel = "glm-4.7";
+      }
+      const codingBaseUrl = process.env.ZAI_CODING_BASE_URL || process.env.GLM_CODING_BASE_URL || "https://api.z.ai/api/coding/paas/v4/";
+      if (!llm.glmCodingBaseURL) {
+        llm.glmCodingBaseURL = codingBaseUrl;
+      }
+    } else {
+      // glm-4.7-flash for free tier
+      if (!llm.glmModel) {
+        llm.glmModel = process.env.ZAI_MODEL || process.env.GLM_MODEL || "glm-4.7-flash";
+      }
+    }
+
+    const zaiBaseUrl = process.env.ZAI_BASE_URL || process.env.GLM_BASE_URL;
+    if (zaiBaseUrl) {
+      llm.glmBaseURL = zaiBaseUrl;
+    }
+  }
+
+  // Auto-detect provider if not explicitly set
+  if (!llm.provider) {
+    if (llm.glmApiKey) {
+      llm.provider = "glm";
+    } else if (llm.apiKey) {
+      llm.provider = "openai";
+    }
+  }
+
+  // Temperature and max tokens
+  if (process.env.LLM_TEMPERATURE) {
+    const temp = parseFloat(process.env.LLM_TEMPERATURE);
+    if (!isNaN(temp)) {
+      llm.temperature = temp;
+    }
+  }
+
+  if (process.env.LLM_MAX_TOKENS) {
+    const tokens = parseInt(process.env.LLM_MAX_TOKENS, 10);
+    if (!isNaN(tokens)) {
+      llm.maxTokens = tokens;
+    }
+  }
+
+  // Return undefined if no LLM config is set
+  if (Object.keys(llm).length === 0) {
+    return undefined;
+  }
+
+  return llm;
 }
 
 function getDefaultConfig(): SystemConfig {

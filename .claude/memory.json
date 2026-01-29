@@ -46,6 +46,11 @@
 {"type":"entity","name":"moonbot::Component::DiscordAdapter","entityType":"component","observations":["sendEmbed() 메서드 추가: Discord Embed 메시지 전송","editMessage() 메서드 추가: 기존 메시지 수정","승인 요청/업데이트에 Embed 사용"]}
 {"type":"entity","name":"moonbot::Component::CommandSanitizer","entityType":"component","observations":["새 허용 명령어: make, cmake, tar, zip, unzip","보안 검토 완료: build tools과 archive tools만 추가","docker, kubectl 제외: 컨테이너 조작 위험"]}
 {"type":"entity","name":"moonbot::Integration::OpenAI","entityType":"integration","observations":["gpt-4o 모델 사용","temperature 0.7, maxTokens 2000","시스템 프롬프트에 도구 목록 포함","JSON 형식으로 Step 배열 반환"]}
+{"type":"entity","name":"[moonbot]::Component::LLMProviderFactory","entityType":"component","observations":["LLM provider 생성 팩토리 (src/llm/LLMProviderFactory.ts)","detectProvider()로 자동 프로바이더 감지 (openai/glm)","buildProviderConfig()로 프로바이더별 설정 구성","ZAI_API_KEY/GLM_API_KEY/OPENAI_API_KEY 순서로 감지"]}
+{"type":"entity","name":"[moonbot]::Component::GLMProvider","entityType":"component","observations":["Z.AI(智谱AI) LLM 프로바이더 (src/llm/providers/GLMProvider.ts)","OpenAI SDK baseURL 활용으로 최소 구현","표준 API와 Coding API 이중 클라이언트 지원","reasoning_content 필드 지원 (glm-4.7-flash 응답)","useCodingAPI=true면 glm-4.7, false면 glm-4.7-flash 사용"]}
+{"type":"entity","name":"[moonbot]::Integration::ZAI_GLMApi","entityType":"integration","observations":["Z.AI API 통합: https://api.z.ai/api/paas/v4/","Coding API: https://api.z.ai/api/coding/paas/v4/","무료 모델 glm-4.7-flash (잔액 불필요)","유료 모델 glm-4.7 (Coding API 전용)","환경변수: ZAI_API_KEY, ZAI_USE_CODING_API, ZAI_MODEL"]}
+{"type":"entity","name":"[moonbot]::Convention::LLMModelSelection","entityType":"convention","observations":["Provider 타입별 모델 선택: LLMClient 생성자에서 처리","glm provider면 config.glmModel 우선, openai면 config.model 우선","기본값: glm-4.7-flash (무료), gpt-4o (openai)"]}
+{"type":"entity","name":"[moonbot]::Feature::EnvAutoLoad","entityType":"feature","observations":["dotenv 패키지로 .env 자동 로드","gateway/index.ts 상단에 import 'dotenv/config' 추가","applyLLMEnvironmentVariables()로 환경변수 처리","ZAI_USE_CODING_API=true면 glm-4.7 + coding endpoint 사용"]}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Channels","relationType":"manages"}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Agents","relationType":"orchestrates"}
 {"type":"relation","from":"moonbot::Component::Agents","to":"moonbot::Component::Tools","relationType":"uses"}
@@ -87,3 +92,7 @@
 {"type":"relation","from":"moonbot::Component::Planner","to":"moonbot::Integration::OpenAI","relationType":"integrates"}
 {"type":"relation","from":"moonbot::Component::Executor","to":"moonbot::Component::DiscordAdapter","relationType":"sends_approval_to"}
 {"type":"relation","from":"moonbot::Component::CronManager","to":"moonbot::Component::TaskOrchestrator","relationType":"delegates_to"}
+{"type":"relation","from":"[moonbot]::Component::LLMProviderFactory","to":"[moonbot]::Component::GLMProvider","relationType":"creates"}
+{"type":"relation","from":"[moonbot]::Component::GLMProvider","to":"[moonbot]::Integration::ZAI_GLMApi","relationType":"implements"}
+{"type":"relation","from":"[moonbot]::Component::LLMClient","to":"[moonbot]::Component::LLMProviderFactory","relationType":"uses"}
+{"type":"relation","from":"[moonbot]::Feature::EnvAutoLoad","to":"[moonbot]::Convention::LLMModelSelection","relationType":"enables"}

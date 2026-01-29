@@ -55,6 +55,7 @@ export interface SystemConfig {
   channels: ChannelConfig[];
   tools: ToolConfig[];
   storage?: StorageConfig;
+  llm?: LLMConfig;
 }
 
 export interface AgentConfig {
@@ -289,10 +290,22 @@ export interface TaskEvent {
  * LLM configuration for the system.
  */
 export interface LLMConfig {
+  /** Provider type: "openai" or "glm" (default: auto-detect from env) */
+  provider?: "openai" | "glm";
   /** OpenAI API key (overrides OPENAI_API_KEY env var) */
   apiKey?: string;
   /** Model to use for planning (default: gpt-4o) */
   model?: string;
+  /** GLM API key (overrides GLM_API_KEY env var) */
+  glmApiKey?: string;
+  /** GLM model (default: glm-4) */
+  glmModel?: string;
+  /** GLM API endpoint (default: https://api.z.ai/api/paas/v4/) */
+  glmBaseURL?: string;
+  /** Use Z.AI Coding API endpoint for code-related tasks (default: false) */
+  glmUseCodingAPI?: boolean;
+  /** Z.AI Coding API endpoint (default: https://api.z.ai/api/coding/paas/v4/) */
+  glmCodingBaseURL?: string;
   /** Temperature for LLM responses (0.0-2.0, default: 0.7) */
   temperature?: number;
   /** Maximum tokens in LLM response (default: 2000) */

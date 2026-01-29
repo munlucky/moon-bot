@@ -22,11 +22,8 @@ export class Planner {
     this.logger = createLogger(config);
     this.availableTools = availableTools;
 
-    // Initialize LLM client
-    this.llmClient = new LLMClient({
-      apiKey: process.env.OPENAI_API_KEY,
-      model: "gpt-4o",
-    });
+    // Initialize LLM client with LLM config
+    this.llmClient = new LLMClient(config.llm);
   }
 
   async plan(message: string, session?: Session): Promise<Plan> {

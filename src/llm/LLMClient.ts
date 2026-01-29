@@ -1,8 +1,10 @@
 // LLM Client for Planner integration
 
-import OpenAI from "openai";
 import type { Step } from "../types/index.js";
+import type { LLMConfig } from "../types/index.js";
 import { createLogger, type Logger } from "../utils/logger.js";
+import { LLMProviderFactory } from "./LLMProviderFactory.js";
+import type { ILLMProvider } from "./types.js";
 
 export interface LLMPlanRequest {
   message: string;
@@ -16,40 +18,48 @@ export interface LLMPlanResponse {
 }
 
 export class LLMClient {
-  private client: OpenAI | null = null;
+  private provider: ILLMProvider;
   private logger: Logger;
   private model: string;
+  private providerType: string;
 
-  constructor(config: { apiKey?: string; model?: string }) {
+  constructor(config: LLMConfig = {}) {
     this.logger = createLogger();
-    this.model = config.model ?? "gpt-4o";
+    this.provider = LLMProviderFactory.create(config);
 
-    const apiKey = config.apiKey ?? process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      this.logger.warn("OPENAI_API_KEY not configured, LLM features will be disabled");
-      return;
+    // Detect provider type
+    this.providerType = config.provider ?? process.env.LLM_PROVIDER ?? "openai";
+
+    // Select model based on provider type
+    if (this.providerType === "glm") {
+      this.model = config.glmModel ?? "glm-4.7-flash";
+    } else {
+      this.model = config.model ?? "gpt-4o";
     }
 
-    this.client = new OpenAI({ apiKey });
-    this.logger.info("LLM client initialized", { model: this.model });
+    if (this.provider.isAvailable()) {
+      this.logger.info("LLM client initialized", { provider: this.providerType, model: this.model });
+    } else {
+      this.logger.warn("LLM client not available (no API key configured)");
+    }
   }
 
   isAvailable(): boolean {
-    return this.client !== null;
+    return this.provider.isAvailable();
   }
 
   /**
    * Generate a plan using LLM
    */
   async generatePlan(request: LLMPlanRequest): Promise<LLMPlanResponse> {
-    if (!this.client) {
-      throw new Error("LLM client not available (OPENAI_API_KEY not configured)");
+    if (!this.provider.isAvailable()) {
+      throw new Error("LLM client not available (API key not configured)");
     }
 
     const systemPrompt = this.buildSystemPrompt(request.availableTools);
 
     try {
-      const response = await this.client.chat.completions.create({
+      const response = await this.provider.chatCompletion({
         model: this.model,
         messages: [
           { role: "system", content: systemPrompt },
@@ -62,12 +72,7 @@ export class LLMClient {
         max_tokens: 2000,
       });
 
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error("Empty response from LLM");
-      }
-
-      return this.parsePlanResponse(content);
+      return this.parsePlanResponse(response.content);
     } catch (error) {
       this.logger.error("LLM plan generation failed", { error });
       throw error;

@@ -27,6 +27,7 @@
     "cli-table3": "^0.6.5",
     "commander": "^14.0.2",
     "discord.js": "^14.15.0",
+    "dotenv": "^17.2.3",
     "openai": "^4.80.0",
     "playwright": "^1.48.0",
     "ws": "^8.18.0",

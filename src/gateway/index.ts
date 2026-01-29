@@ -1,5 +1,6 @@
 // Gateway entry point
 
+import "dotenv/config";
 import { loadConfig, ensureStorageDirectories } from "../config/index.js";
 import type { SystemConfig } from "../types/index.js";
 import { GatewayServer } from "./server.js";
