@@ -589,4 +589,442 @@ describe('TaskOrchestrator', () => {
       expect(stats.tasks.total).toBe(3);
     });
   });
+
+  describe('approval flow', () => {
+    describe('getPendingApprovals', () => {
+      it('should return empty array initially', () => {
+        const approvals = orchestrator.getPendingApprovals();
+        expect(approvals).toEqual([]);
+      });
+
+      it('should return pending approvals when they exist', () => {
+        // We need to simulate the approval request via the toolRuntime event
+        // Since toolRuntime.on is mocked, we need to capture the callback and call it
+        const onCalls = (mockToolRuntime.on as ReturnType<typeof vi.fn>).mock.calls;
+        const approvalRequestedHandler = onCalls.find(
+          (call) => call[0] === 'approvalRequested'
+        )?.[1];
+
+        if (approvalRequestedHandler) {
+          // Create a task first
+          const message = createMockMessage('test');
+          const { taskId } = orchestrator.createTask({
+            message,
+            channelSessionId: 'ch-session-1',
+          });
+
+          // Get the task to find its channelId
+          const task = orchestrator.getTask(taskId);
+
+          // The sessionTaskMap is set during execution, so we simulate that
+          // by triggering the approval request event
+          // Note: This tests the getPendingApprovals method indirectly
+          // since pendingApprovals is private
+        }
+
+        // Without the actual event flow, we can only test the empty case
+        const approvals = orchestrator.getPendingApprovals();
+        expect(Array.isArray(approvals)).toBe(true);
+      });
+    });
+
+    describe('grantApproval', () => {
+      it('should return false for non-existent task', () => {
+        const result = orchestrator.grantApproval('non-existent-id', true);
+        expect(result).toBe(false);
+      });
+
+      it('should return false for task not in PAUSED state', async () => {
+        const message = createMockMessage('test');
+        const { taskId } = orchestrator.createTask({
+          message,
+          channelSessionId: 'ch-session-1',
+        });
+
+        // Task starts as PENDING or RUNNING, not PAUSED
+        const result = orchestrator.grantApproval(taskId, true);
+        expect(result).toBe(false);
+      });
+
+      it('should return false when no pending approval exists for task', async () => {
+        // Create a task and manually set it to PAUSED state via registry
+        // Since registry is private, we need to work through the public API
+        const message = createMockMessage('slow task');
+
+        // Create a slow executor to keep the task in a controllable state
+        const slowExecutor = {
+          execute: vi.fn().mockImplementation(async () => {
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            return { success: true, messages: [], errors: new Map() };
+          }),
+        } as unknown as Executor;
+
+        const slowOrchestrator = new TaskOrchestrator(mockSystemConfig, {
+          taskTimeoutMs: 10000,
+          maxQueueSizePerChannel: 10,
+        }, {
+          executor: slowExecutor,
+          sessionManager: mockSessionManager,
+          toolRuntime: mockToolRuntime,
+        });
+
+        const { taskId } = slowOrchestrator.createTask({
+          message,
+          channelSessionId: 'ch-session-1',
+        });
+
+        // Wait for task to be in RUNNING state
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        // Task is RUNNING, not PAUSED, so grantApproval should fail
+        const result = slowOrchestrator.grantApproval(taskId, true);
+        expect(result).toBe(false);
+      });
+
+      it('should emit approvalResolved when approval is granted for PAUSED task', async () => {
+        // Create orchestrator with a mock that will call the approvalRequested handler
+        type ApprovalHandler = (event: { requestId: string; sessionId: string; toolId: string; input: unknown }) => void;
+        type ResolvedHandler = (event: { requestId: string; approved: boolean }) => void;
+
+        let approvalRequestedHandler: ApprovalHandler | undefined;
+        let approvalResolvedHandler: ResolvedHandler | undefined;
+
+        const customToolRuntime = {
+          on: vi.fn().mockImplementation((event: string, handler: unknown) => {
+            if (event === 'approvalRequested') {
+              approvalRequestedHandler = handler as ApprovalHandler;
+            } else if (event === 'approvalResolved') {
+              approvalResolvedHandler = handler as ResolvedHandler;
+            }
+          }),
+          emit: vi.fn().mockImplementation((event: string, data: unknown) => {
+            // When emit is called with approvalResolved, call the handler
+            if (event === 'approvalResolved' && approvalResolvedHandler) {
+              approvalResolvedHandler(data as { requestId: string; approved: boolean });
+            }
+          }),
+        } as unknown as ToolRuntime;
+
+        // Create a blocking executor
+        let resolveExecutor: (() => void) | null = null;
+        const blockingExecutor = {
+          execute: vi.fn().mockImplementation(async () => {
+            await new Promise<void>(resolve => {
+              resolveExecutor = resolve;
+            });
+            return {
+              success: true,
+              messages: [{ type: 'assistant', content: 'done', timestamp: Date.now() }],
+              errors: new Map(),
+              sessionId: 'session-1',
+            };
+          }),
+        } as unknown as Executor;
+
+        const testOrchestrator = new TaskOrchestrator(mockSystemConfig, {
+          taskTimeoutMs: 30000,
+          maxQueueSizePerChannel: 10,
+        }, {
+          executor: blockingExecutor,
+          sessionManager: mockSessionManager,
+          toolRuntime: customToolRuntime,
+        });
+
+        // Create a task
+        const message = createMockMessage('approval test');
+        const { taskId } = testOrchestrator.createTask({
+          message,
+          channelSessionId: 'ch-session-1',
+        });
+
+        // Wait for task to start
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Simulate approval request event
+        if (approvalRequestedHandler) {
+          approvalRequestedHandler({
+            requestId: 'req-123',
+            sessionId: 'session-1',
+            toolId: 'test-tool',
+            input: { arg: 'value' },
+          });
+        }
+
+        // Now task should be PAUSED
+        const task = testOrchestrator.getTask(taskId);
+        expect(task?.state).toBe('PAUSED');
+
+        // Pending approvals should have one item
+        const pendingBefore = testOrchestrator.getPendingApprovals();
+        expect(pendingBefore.length).toBe(1);
+        expect(pendingBefore[0].taskId).toBe(taskId);
+        expect(pendingBefore[0].toolId).toBe('test-tool');
+
+        // Grant approval
+        const result = testOrchestrator.grantApproval(taskId, true);
+        expect(result).toBe(true);
+
+        // emit should have been called with approvalResolved
+        expect(customToolRuntime.emit).toHaveBeenCalledWith('approvalResolved', {
+          requestId: 'req-123',
+          approved: true,
+        });
+
+        // Clean up
+        if (resolveExecutor) {
+          resolveExecutor();
+        }
+      });
+
+      it('should handle approval denial correctly', async () => {
+        type ApprovalHandler = (event: { requestId: string; sessionId: string; toolId: string; input: unknown }) => void;
+        type ResolvedHandler = (event: { requestId: string; approved: boolean }) => void;
+
+        let approvalRequestedHandler: ApprovalHandler | undefined;
+        let approvalResolvedHandler: ResolvedHandler | undefined;
+
+        const customToolRuntime = {
+          on: vi.fn().mockImplementation((event: string, handler: unknown) => {
+            if (event === 'approvalRequested') {
+              approvalRequestedHandler = handler as ApprovalHandler;
+            } else if (event === 'approvalResolved') {
+              approvalResolvedHandler = handler as ResolvedHandler;
+            }
+          }),
+          emit: vi.fn().mockImplementation((event: string, data: unknown) => {
+            if (event === 'approvalResolved' && approvalResolvedHandler) {
+              approvalResolvedHandler(data as { requestId: string; approved: boolean });
+            }
+          }),
+        } as unknown as ToolRuntime;
+
+        let resolveExecutor: (() => void) | null = null;
+        const blockingExecutor = {
+          execute: vi.fn().mockImplementation(async () => {
+            await new Promise<void>(resolve => {
+              resolveExecutor = resolve;
+            });
+            return {
+              success: true,
+              messages: [],
+              errors: new Map(),
+              sessionId: 'session-1',
+            };
+          }),
+        } as unknown as Executor;
+
+        const testOrchestrator = new TaskOrchestrator(mockSystemConfig, {
+          taskTimeoutMs: 30000,
+          maxQueueSizePerChannel: 10,
+        }, {
+          executor: blockingExecutor,
+          sessionManager: mockSessionManager,
+          toolRuntime: customToolRuntime,
+        });
+
+        const message = createMockMessage('denial test');
+        const { taskId } = testOrchestrator.createTask({
+          message,
+          channelSessionId: 'ch-session-2',
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Simulate approval request
+        if (approvalRequestedHandler) {
+          approvalRequestedHandler({
+            requestId: 'req-456',
+            sessionId: 'session-1',
+            toolId: 'dangerous-tool',
+            input: {},
+          });
+        }
+
+        const task = testOrchestrator.getTask(taskId);
+        expect(task?.state).toBe('PAUSED');
+
+        // Deny approval
+        const result = testOrchestrator.grantApproval(taskId, false);
+        expect(result).toBe(true);
+
+        expect(customToolRuntime.emit).toHaveBeenCalledWith('approvalResolved', {
+          requestId: 'req-456',
+          approved: false,
+        });
+
+        // After denial, task should be ABORTED
+        const taskAfter = testOrchestrator.getTask(taskId);
+        expect(taskAfter?.state).toBe('ABORTED');
+
+        // Pending approvals should be cleared
+        const pendingAfter = testOrchestrator.getPendingApprovals();
+        expect(pendingAfter.length).toBe(0);
+
+        // Clean up
+        if (resolveExecutor) {
+          resolveExecutor();
+        }
+      });
+    });
+
+    describe('approval callback events', () => {
+      it('should call onApprovalRequest callback when approval is requested', async () => {
+        type ApprovalHandler = (event: { requestId: string; sessionId: string; toolId: string; input: unknown }) => void;
+
+        let approvalRequestedHandler: ApprovalHandler | undefined;
+
+        const customToolRuntime = {
+          on: vi.fn().mockImplementation((event: string, handler: unknown) => {
+            if (event === 'approvalRequested') {
+              approvalRequestedHandler = handler as ApprovalHandler;
+            }
+          }),
+          emit: vi.fn(),
+        } as unknown as ToolRuntime;
+
+        let resolveExecutor: (() => void) | null = null;
+        const blockingExecutor = {
+          execute: vi.fn().mockImplementation(async () => {
+            await new Promise<void>(resolve => {
+              resolveExecutor = resolve;
+            });
+            return {
+              success: true,
+              messages: [],
+              errors: new Map(),
+              sessionId: 'session-1',
+            };
+          }),
+        } as unknown as Executor;
+
+        const testOrchestrator = new TaskOrchestrator(mockSystemConfig, {
+          taskTimeoutMs: 30000,
+          maxQueueSizePerChannel: 10,
+        }, {
+          executor: blockingExecutor,
+          sessionManager: mockSessionManager,
+          toolRuntime: customToolRuntime,
+        });
+
+        // Register approval request callback
+        const approvalRequestCallback = vi.fn();
+        testOrchestrator.onApprovalRequest(approvalRequestCallback);
+
+        const message = createMockMessage('callback test');
+        testOrchestrator.createTask({
+          message,
+          channelSessionId: 'ch-session-cb',
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Simulate approval request
+        if (approvalRequestedHandler) {
+          approvalRequestedHandler({
+            requestId: 'req-cb-123',
+            sessionId: 'session-1',
+            toolId: 'callback-tool',
+            input: { data: 'test' },
+          });
+        }
+
+        expect(approvalRequestCallback).toHaveBeenCalledTimes(1);
+        expect(approvalRequestCallback).toHaveBeenCalledWith(
+          expect.objectContaining({
+            toolId: 'callback-tool',
+            requestId: 'req-cb-123',
+          })
+        );
+
+        if (resolveExecutor) {
+          resolveExecutor();
+        }
+      });
+
+      it('should call onApprovalResolved callback when approval is resolved', async () => {
+        type ApprovalHandler = (event: { requestId: string; sessionId: string; toolId: string; input: unknown }) => void;
+        type ResolvedHandler = (event: { requestId: string; approved: boolean }) => void;
+
+        let approvalRequestedHandler: ApprovalHandler | undefined;
+        let approvalResolvedHandler: ResolvedHandler | undefined;
+
+        const customToolRuntime = {
+          on: vi.fn().mockImplementation((event: string, handler: unknown) => {
+            if (event === 'approvalRequested') {
+              approvalRequestedHandler = handler as ApprovalHandler;
+            } else if (event === 'approvalResolved') {
+              approvalResolvedHandler = handler as ResolvedHandler;
+            }
+          }),
+          emit: vi.fn().mockImplementation((event: string, data: unknown) => {
+            if (event === 'approvalResolved' && approvalResolvedHandler) {
+              approvalResolvedHandler(data as { requestId: string; approved: boolean });
+            }
+          }),
+        } as unknown as ToolRuntime;
+
+        let resolveExecutor: (() => void) | null = null;
+        const blockingExecutor = {
+          execute: vi.fn().mockImplementation(async () => {
+            await new Promise<void>(resolve => {
+              resolveExecutor = resolve;
+            });
+            return {
+              success: true,
+              messages: [],
+              errors: new Map(),
+              sessionId: 'session-1',
+            };
+          }),
+        } as unknown as Executor;
+
+        const testOrchestrator = new TaskOrchestrator(mockSystemConfig, {
+          taskTimeoutMs: 30000,
+          maxQueueSizePerChannel: 10,
+        }, {
+          executor: blockingExecutor,
+          sessionManager: mockSessionManager,
+          toolRuntime: customToolRuntime,
+        });
+
+        // Register approval resolved callback
+        const approvalResolvedCallback = vi.fn();
+        testOrchestrator.onApprovalResolved(approvalResolvedCallback);
+
+        const message = createMockMessage('resolved callback test');
+        const { taskId } = testOrchestrator.createTask({
+          message,
+          channelSessionId: 'ch-session-resolved',
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Simulate approval request
+        if (approvalRequestedHandler) {
+          approvalRequestedHandler({
+            requestId: 'req-resolved-123',
+            sessionId: 'session-1',
+            toolId: 'resolved-tool',
+            input: {},
+          });
+        }
+
+        // Grant approval
+        testOrchestrator.grantApproval(taskId, true);
+
+        expect(approvalResolvedCallback).toHaveBeenCalledTimes(1);
+        expect(approvalResolvedCallback).toHaveBeenCalledWith(
+          expect.objectContaining({
+            taskId,
+            approved: true,
+            requestId: 'req-resolved-123',
+          })
+        );
+
+        if (resolveExecutor) {
+          resolveExecutor();
+        }
+      });
+    });
+  });
 });

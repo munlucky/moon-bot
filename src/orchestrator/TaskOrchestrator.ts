@@ -283,7 +283,8 @@ export class TaskOrchestrator {
           metadata: { state: "ABORTED" },
         });
 
-        // Clean up queue
+        // Clean up session mappings and queue
+        this.cleanupSessionMappings(task.id);
         this.queue.dequeue(task.channelSessionId);
         this.queue.stopProcessing(task.channelSessionId);
 
@@ -351,6 +352,9 @@ export class TaskOrchestrator {
       // Process next task in channel
       this.processChannel(task.channelSessionId);
     }
+
+    // Clean up session mappings
+    this.cleanupSessionMappings(taskId);
 
     // Send response
     this.sendResponse({
@@ -544,15 +548,7 @@ export class TaskOrchestrator {
       });
     } finally {
       // Clean up session to task mapping
-      const sessionTasks: string[] = [];
-      for (const [sessionId, tid] of this.sessionTaskMap.entries()) {
-        if (tid === taskId) {
-          sessionTasks.push(sessionId);
-        }
-      }
-      for (const sessionId of sessionTasks) {
-        this.sessionTaskMap.delete(sessionId);
-      }
+      this.cleanupSessionMappings(taskId);
 
       // Mark task as done in queue
       this.queue.dequeue(channelSessionId);
@@ -616,6 +612,10 @@ export class TaskOrchestrator {
         task.channelSessionId
       );
     }
+
+    // Set up session to task mapping BEFORE executing
+    // This allows approvalRequested events to find the task during execution
+    this.sessionTaskMap.set(session.id, task.id);
 
     // Add user message to session
     this.sessionManager.addMessage(session.id, {
@@ -688,6 +688,25 @@ export class TaskOrchestrator {
       tasks: this.registry.getStats(),
       queue: this.queue.getStats(),
     };
+  }
+
+  /**
+   * Clean up session-to-task mappings for a given task.
+   * Call this when a task completes, fails, or is aborted.
+   */
+  private cleanupSessionMappings(taskId: string): void {
+    const sessionIdsToRemove: string[] = [];
+    for (const [sessionId, tid] of this.sessionTaskMap.entries()) {
+      if (tid === taskId) {
+        sessionIdsToRemove.push(sessionId);
+      }
+    }
+    for (const sessionId of sessionIdsToRemove) {
+      this.sessionTaskMap.delete(sessionId);
+    }
+    if (sessionIdsToRemove.length > 0) {
+      this.logger.debug("Cleaned up session mappings", { taskId, count: sessionIdsToRemove.length });
+    }
   }
 
   /**
