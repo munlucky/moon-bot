@@ -62,6 +62,31 @@ export class PerChannelQueue<T> {
   }
 
   /**
+   * Remove a specific item from a channel's queue.
+   * Returns true if the item was found and removed.
+   */
+  remove(channelSessionId: string, item: T): boolean {
+    const queue = this.queues.get(channelSessionId);
+    if (!queue) {
+      return false;
+    }
+
+    const index = queue.indexOf(item);
+    if (index === -1) {
+      return false;
+    }
+
+    queue.splice(index, 1);
+
+    // Clean up empty queues
+    if (queue.length === 0) {
+      this.queues.delete(channelSessionId);
+    }
+
+    return true;
+  }
+
+  /**
    * Mark a channel as currently processing.
    */
   startProcessing(channelSessionId: string): void {

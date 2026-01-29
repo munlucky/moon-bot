@@ -112,7 +112,7 @@ export class TaskRegistry {
 
     for (const [id, task] of this.tasks.entries()) {
       if (
-        (task.state === "DONE" || task.state === "FAILED") &&
+        (task.state === "DONE" || task.state === "FAILED" || task.state === "ABORTED") &&
         task.updatedAt < cutoff
       ) {
         this.tasks.delete(id);
@@ -145,10 +145,12 @@ export class TaskRegistry {
    */
   private isValidTransition(from: TaskState, to: TaskState): boolean {
     const validTransitions: Record<TaskState, TaskState[]> = {
-      PENDING: ["RUNNING", "FAILED"],
-      RUNNING: ["DONE", "FAILED"],
-      FAILED: [],
+      PENDING: ["RUNNING", "FAILED", "ABORTED"],
+      RUNNING: ["DONE", "FAILED", "PAUSED", "ABORTED"],
+      PAUSED: ["RUNNING", "ABORTED"],
       DONE: [],
+      FAILED: [],
+      ABORTED: [],
     };
 
     return validTransitions[from]?.includes(to) ?? false;
@@ -174,8 +176,10 @@ export class TaskRegistry {
     const byState: Record<TaskState, number> = {
       PENDING: 0,
       RUNNING: 0,
-      FAILED: 0,
+      PAUSED: 0,
       DONE: 0,
+      FAILED: 0,
+      ABORTED: 0,
     };
 
     for (const task of this.tasks.values()) {

@@ -12,6 +12,9 @@ import { createChannelHandlers } from "./handlers/channel.handler.js";
 import { saveConfig } from "../config/manager.js";
 import { DiscordAdapter } from "../channels/discord.js";
 import { TaskOrchestrator } from "../orchestrator/index.js";
+import { createGatewayTools, type Toolkit } from "../tools/index.js";
+import { SessionManager } from "../sessions/manager.js";
+import { Executor } from "../agents/executor.js";
 
 /**
  * Rate limiter to prevent connection flooding.
@@ -124,7 +127,10 @@ export class GatewayServer {
   private rateLimiter: ConnectionRateLimiter;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private toolRuntime: ToolRuntime | null = null;
-  private orchestrator: TaskOrchestrator;
+  private toolkit: Toolkit | null = null;
+  private sessionManager: SessionManager | null = null;
+  private executor: Executor | null = null;
+  private orchestrator!: TaskOrchestrator; // Definitely assigned in initializeDependencies
 
   constructor(config: SystemConfig, workspaceRoot?: string) {
     this.config = config;
@@ -143,15 +149,51 @@ export class GatewayServer {
       enableApprovals: true,
     });
 
-    // Initialize TaskOrchestrator
-    this.orchestrator = new TaskOrchestrator(config);
+    this.initializeDependencies(workspaceRoot).then(() => {
+      // Initialize TaskOrchestrator with dependencies
+      this.orchestrator = new TaskOrchestrator(config, undefined, {
+        executor: this.executor ?? undefined,
+        toolkit: this.toolkit ?? undefined,
+        sessionManager: this.sessionManager ?? undefined,
+      });
 
-    // Register orchestrator response callback
-    this.orchestrator.onResponse((response) => {
-      this.broadcast("chat.response", response);
+      // Register orchestrator response callback
+      this.orchestrator.onResponse((response) => {
+        this.broadcast("chat.response", response);
+      });
+
+      this.setupHandlers();
+    }).catch((error) => {
+      this.logger.error("Failed to initialize dependencies", { error });
+      // Still create orchestrator without dependencies for fallback echo mode
+      this.orchestrator = new TaskOrchestrator(config);
+      this.setupHandlers();
+    });
+  }
+
+  /**
+   * Initialize Toolkit, SessionManager, and Executor asynchronously.
+   */
+  private async initializeDependencies(workspaceRoot?: string): Promise<void> {
+    // Initialize Toolkit
+    this.toolkit = await createGatewayTools(this.config, {
+      workspaceRoot: workspaceRoot ?? process.cwd(),
+      enableBrowser: false,
     });
 
-    this.setupHandlers();
+    // Initialize SessionManager
+    this.sessionManager = new SessionManager(this.config);
+
+    // Initialize Executor with Toolkit
+    if (this.toolkit) {
+      this.executor = new Executor(this.config, this.toolkit);
+    }
+
+    this.logger.info("Dependencies initialized", {
+      hasToolkit: !!this.toolkit,
+      hasSessionManager: !!this.sessionManager,
+      hasExecutor: !!this.executor,
+    });
   }
 
   /**
@@ -370,6 +412,20 @@ export class GatewayServer {
    */
   getOrchestrator(): TaskOrchestrator {
     return this.orchestrator;
+  }
+
+  /**
+   * Get the session manager instance.
+   */
+  getSessionManager(): SessionManager | null {
+    return this.sessionManager;
+  }
+
+  /**
+   * Get the toolkit instance.
+   */
+  getToolkit(): Toolkit | null {
+    return this.toolkit;
   }
 
   broadcast(method: string, params?: unknown): void {

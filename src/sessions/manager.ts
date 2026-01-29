@@ -5,20 +5,23 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { createLogger, type Logger } from "../utils/logger.js";
 import type { SystemConfig, Session, SessionMessage } from "../types/index.js";
+import { generate as generateSessionKey } from "./SessionKey.js";
 
 export class SessionManager {
   private config: SystemConfig;
   private logger: Logger;
   private sessions = new Map<string, Session>();
+  private sessionKeys = new Map<string, Session>();
 
   constructor(config: SystemConfig) {
     this.config = config;
     this.logger = createLogger(config);
   }
 
-  create(agentId: string, userId: string, channelId: string): Session {
+  create(agentId: string, userId: string, channelId: string, channelSessionId?: string): Session {
     const session: Session = {
       id: randomUUID(),
+      sessionKey: channelSessionId ? generateSessionKey(agentId, channelSessionId) : undefined,
       agentId,
       userId,
       channelId,
@@ -28,6 +31,12 @@ export class SessionManager {
     };
 
     this.sessions.set(session.id, session);
+
+    // Index by sessionKey if provided
+    if (session.sessionKey) {
+      this.sessionKeys.set(session.sessionKey, session);
+    }
+
     this.save(session);
 
     this.logger.info(`Session created: ${session.id}`);
@@ -36,6 +45,13 @@ export class SessionManager {
 
   get(sessionId: string): Session | undefined {
     return this.sessions.get(sessionId);
+  }
+
+  /**
+   * Get a session by sessionKey (agent:<id>:session:<key> format).
+   */
+  getBySessionKey(sessionKey: string): Session | undefined {
+    return this.sessionKeys.get(sessionKey);
   }
 
   async load(sessionId: string): Promise<Session | null> {

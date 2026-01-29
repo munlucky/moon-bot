@@ -96,6 +96,8 @@ export interface SessionMessage {
 
 export interface Session {
   id: string;
+  /** sessionKey in format: agent:<id>:session:<key> for Moltbot compatibility */
+  sessionKey?: string;
   agentId: string;
   userId: string;
   channelId: string;
@@ -235,7 +237,7 @@ export interface TaskResponse {
 /**
  * Task states for the orchestrator state machine.
  */
-export type TaskState = "PENDING" | "RUNNING" | "FAILED" | "DONE";
+export type TaskState = "PENDING" | "RUNNING" | "PAUSED" | "DONE" | "FAILED" | "ABORTED";
 
 /**
  * Task entity managed by the Orchestrator.

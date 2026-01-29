@@ -11,6 +11,11 @@ import { TaskRegistry } from "./TaskRegistry.js";
 import { PerChannelQueue } from "./PerChannelQueue.js";
 import { createLogger, type Logger } from "../utils/logger.js";
 import type { SystemConfig } from "../types/index.js";
+import type { Executor } from "../agents/executor.js";
+import type { Toolkit } from "../tools/index.js";
+import type { SessionManager } from "../sessions/manager.js";
+import type { ExecutionResult } from "../agents/executor.js";
+import type { ToolRuntime } from "../tools/runtime/ToolRuntime.js";
 
 const DEFAULT_CONFIG: OrchestratorConfig = {
   taskTimeoutMs: 30000, // 30 seconds
@@ -20,28 +25,86 @@ const DEFAULT_CONFIG: OrchestratorConfig = {
 
 type ResponseCallback = (response: TaskResponse) => void;
 
+/**
+ * Task state change event with channel information.
+ */
+export interface TaskStateChangeEvent {
+  taskId: string;
+  channelId: string;
+  previousState: TaskState | null;
+  newState: TaskState;
+  timestamp: number;
+}
+
+type StateChangeCallback = (event: TaskStateChangeEvent) => void;
+
+/**
+ * Pending approval tracking.
+ */
+interface PendingApproval {
+  taskId: string;
+  channelId: string;
+  toolId: string;
+  requestedAt: number;
+}
+
 export class TaskOrchestrator {
   private registry: TaskRegistry;
   private queue: PerChannelQueue<string>; // Queue stores task IDs
   private config: OrchestratorConfig;
   private logger: Logger;
   private responseCallbacks: Set<ResponseCallback> = new Set();
+  private stateChangeCallbacks: Set<StateChangeCallback> = new Set();
   private processingTimers: Map<string, NodeJS.Timeout> = new Map();
   private systemConfig: SystemConfig;
+  private executor: Executor | null = null;
+  private toolkit: Toolkit | null = null;
+  private sessionManager: SessionManager | null = null;
+  private toolRuntime: ToolRuntime | null = null;
+  private pendingApprovals: Map<string, PendingApproval> = new Map();
+  // Map session IDs to task IDs for approval handling
+  private sessionTaskMap: Map<string, string> = new Map();
 
-  constructor(systemConfig: SystemConfig, config?: Partial<OrchestratorConfig>) {
+  constructor(
+    systemConfig: SystemConfig,
+    config?: Partial<OrchestratorConfig>,
+    deps?: {
+      executor?: Executor;
+      toolkit?: Toolkit;
+      sessionManager?: SessionManager;
+      toolRuntime?: ToolRuntime;
+    }
+  ) {
     this.systemConfig = systemConfig;
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.registry = new TaskRegistry();
     this.queue = new PerChannelQueue(this.config.maxQueueSizePerChannel);
     this.logger = createLogger(systemConfig);
+    this.executor = deps?.executor ?? null;
+    this.toolkit = deps?.toolkit ?? null;
+    this.sessionManager = deps?.sessionManager ?? null;
+    this.toolRuntime = deps?.toolRuntime ?? null;
 
-    // Subscribe to task events for debugging
-    if (this.config.debugEvents) {
-      this.registry.onTaskEvent((event) => {
+    // Subscribe to task events for debugging and state change emission
+    this.registry.onTaskEvent((event) => {
+      if (this.config.debugEvents) {
         this.logger.debug("Task event", { event });
-      });
-    }
+      }
+      // Emit state change event with channelId
+      const task = this.registry.get(event.taskId);
+      if (task) {
+        this.emitStateChange({
+          taskId: event.taskId,
+          channelId: task.message.channelId,
+          previousState: event.previousState,
+          newState: event.newState,
+          timestamp: event.timestamp,
+        });
+      }
+    });
+
+    // Setup approval event handlers
+    this.setupApprovalHandlers();
   }
 
   /**
@@ -50,6 +113,184 @@ export class TaskOrchestrator {
   onResponse(callback: ResponseCallback): () => void {
     this.responseCallbacks.add(callback);
     return () => this.responseCallbacks.delete(callback);
+  }
+
+  /**
+   * Register a callback for task state changes.
+   */
+  onTaskState(callback: StateChangeCallback): () => void {
+    this.stateChangeCallbacks.add(callback);
+    return () => this.stateChangeCallbacks.delete(callback);
+  }
+
+  /**
+   * Emit state change event to all registered callbacks.
+   */
+  private emitStateChange(event: TaskStateChangeEvent): void {
+    for (const callback of this.stateChangeCallbacks) {
+      try {
+        callback(event);
+      } catch (error) {
+        this.logger.error("State change callback error", { error });
+      }
+    }
+  }
+
+  /**
+   * Setup approval event handlers from ToolRuntime.
+   */
+  private setupApprovalHandlers(): void {
+    if (!this.toolRuntime) {
+      return;
+    }
+
+    // Listen for approval requested events
+    this.toolRuntime.on("approvalRequested", ({ requestId, sessionId, toolId, input }) => {
+      this.logger.info("Approval requested", { requestId, toolId, sessionId });
+
+      // Find the task associated with this session via sessionTaskMap
+      const taskId = this.sessionTaskMap.get(sessionId);
+      const task = taskId ? this.registry.get(taskId) : undefined;
+
+      if (task) {
+        // Transition task to PAUSED state
+        this.registry.updateState(task.id, "PAUSED");
+
+        // Track pending approval
+        this.pendingApprovals.set(requestId, {
+          taskId: task.id,
+          channelId: task.message.channelId,
+          toolId,
+          requestedAt: Date.now(),
+        });
+
+        // Notify about approval request
+        this.sendResponse({
+          taskId: task.id,
+          channelId: task.message.channelId,
+          text: `승인 필요: 도구 '${toolId}' 실행을 위한 승인이 필요합니다.`,
+          status: "pending",
+          metadata: {
+            state: "PAUSED",
+            approvalRequestId: requestId,
+            toolId,
+          },
+        });
+      }
+    });
+
+    // Listen for approval resolved events
+    this.toolRuntime.on("approvalResolved", ({ requestId, approved }) => {
+      this.logger.info("Approval resolved", { requestId, approved });
+
+      const pending = this.pendingApprovals.get(requestId);
+      if (!pending) {
+        return;
+      }
+
+      const task = this.registry.get(pending.taskId);
+      if (!task) {
+        this.pendingApprovals.delete(requestId);
+        return;
+      }
+
+      this.pendingApprovals.delete(requestId);
+
+      if (approved) {
+        // Resume task: transition back to RUNNING
+        this.registry.updateState(task.id, "RUNNING");
+
+        // Resume processing
+        this.processChannel(task.channelSessionId);
+      } else {
+        // Approval denied: abort task
+        this.registry.updateState(task.id, "ABORTED", undefined, {
+          code: "APPROVAL_DENIED",
+          userMessage: "승인이 거부되어 작업이 중단되었습니다.",
+          internalMessage: `Tool ${pending.toolId} approval denied`,
+        });
+
+        // Send response
+        this.sendResponse({
+          taskId: task.id,
+          channelId: task.message.channelId,
+          text: "승인이 거부되어 작업이 중단되었습니다.",
+          status: "failed",
+          metadata: { state: "ABORTED" },
+        });
+
+        // Clean up queue
+        this.queue.dequeue(task.channelSessionId);
+        this.queue.stopProcessing(task.channelSessionId);
+
+        // Process next task
+        this.processChannel(task.channelSessionId);
+      }
+    });
+  }
+
+  /**
+   * Abort a running or paused task.
+   */
+  abortTask(taskId: string): boolean {
+    const task = this.registry.get(taskId);
+    if (!task) {
+      return false;
+    }
+
+    // Can only abort PENDING, RUNNING, or PAUSED tasks
+    if (task.state !== "PENDING" && task.state !== "RUNNING" && task.state !== "PAUSED") {
+      this.logger.warn("Cannot abort task in state", { taskId, state: task.state });
+      return false;
+    }
+
+    // Update state to ABORTED
+    this.registry.updateState(taskId, "ABORTED", undefined, {
+      code: "ABORTED",
+      userMessage: "작업이 중단되었습니다.",
+      internalMessage: "Task aborted by user request",
+    });
+
+    // Clear timeout if set
+    const timer = this.processingTimers.get(taskId);
+    if (timer) {
+      clearTimeout(timer);
+      this.processingTimers.delete(taskId);
+    }
+
+    // Remove from queue if pending
+    if (task.state === "PENDING") {
+      this.queue.remove(task.channelSessionId, taskId);
+    }
+
+    // Stop processing if this was the running task
+    if (task.state === "RUNNING" || task.state === "PAUSED") {
+      this.queue.dequeue(task.channelSessionId);
+      this.queue.stopProcessing(task.channelSessionId);
+
+      // Cancel any pending approvals
+      for (const [requestId, pending] of this.pendingApprovals.entries()) {
+        if (pending.taskId === taskId) {
+          this.toolRuntime?.emit("approvalCancelled", { requestId });
+          this.pendingApprovals.delete(requestId);
+        }
+      }
+
+      // Process next task in channel
+      this.processChannel(task.channelSessionId);
+    }
+
+    // Send response
+    this.sendResponse({
+      taskId,
+      channelId: task.message.channelId,
+      text: "작업이 중단되었습니다.",
+      status: "failed",
+      metadata: { state: "ABORTED" },
+    });
+
+    this.logger.info("Task aborted", { taskId });
+    return true;
   }
 
   /**
@@ -140,6 +381,11 @@ export class TaskOrchestrator {
       // Execute the task (placeholder - calls existing Echo/Agent logic)
       const result = await this.executeTaskLogic(task);
 
+      // Track session to task mapping for approval handling
+      if (result.sessionId) {
+        this.sessionTaskMap.set(result.sessionId, task.id);
+      }
+
       // Clear timeout
       clearTimeout(timeoutTimer);
       this.processingTimers.delete(taskId);
@@ -168,6 +414,17 @@ export class TaskOrchestrator {
         stack: error instanceof Error ? error.stack : undefined,
       });
     } finally {
+      // Clean up session to task mapping
+      const sessionTasks: string[] = [];
+      for (const [sessionId, tid] of this.sessionTaskMap.entries()) {
+        if (tid === taskId) {
+          sessionTasks.push(sessionId);
+        }
+      }
+      for (const sessionId of sessionTasks) {
+        this.sessionTaskMap.delete(sessionId);
+      }
+
       // Mark task as done in queue
       this.queue.dequeue(channelSessionId);
       this.queue.stopProcessing(channelSessionId);
@@ -205,23 +462,70 @@ export class TaskOrchestrator {
   }
 
   /**
-   * Execute the actual task logic.
-   * TODO: Integrate with existing Agent/Executor logic.
+   * Execute the actual task logic using Executor.
    */
-  private async executeTaskLogic(task: Task): Promise<{ text: string }> {
-    // Placeholder: Echo the message back
-    // This will be replaced with actual Agent/Executor integration
+  private async executeTaskLogic(task: Task): Promise<{ text: string; sessionId?: string }> {
+    // If no executor configured, fall back to echo placeholder
+    if (!this.executor || !this.sessionManager) {
+      const { message } = task;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return {
+        text: `[Echo - No Executor] ${message.text}`,
+      };
+    }
 
     const { message } = task;
 
-    // Simulate processing delay
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Get or create session for this task
+    let session = this.sessionManager.getBySessionKey(task.channelSessionId);
 
-    // TODO: Call Agent Planner/Executor
-    // For now, simple echo response
-    return {
-      text: `[Echo] ${message.text}`,
-    };
+    if (!session) {
+      session = this.sessionManager.create(
+        message.agentId,
+        message.userId,
+        message.channelId,
+        task.channelSessionId
+      );
+    }
+
+    // Add user message to session
+    this.sessionManager.addMessage(session.id, {
+      type: "user",
+      content: message.text,
+      timestamp: Date.now(),
+      metadata: message.metadata,
+    });
+
+    // Execute using Executor
+    const result: ExecutionResult = await this.executor.execute(
+      message.text,
+      session.id,
+      message.agentId,
+      message.userId
+    );
+
+    // Add execution messages to session
+    for (const msg of result.messages) {
+      this.sessionManager.addMessage(session.id, msg);
+    }
+
+    // Format response from execution result
+    if (result.success) {
+      const summaryMsg = result.messages.find((m) => m.type === "assistant" || m.type === "result");
+      return {
+        text: summaryMsg?.content ?? "작업이 완료되었습니다.",
+        sessionId: session.id,
+      };
+    } else {
+      // Format error messages
+      const errorMessages = Array.from(result.errors.values())
+        .map((e) => e.message)
+        .join("; ");
+      return {
+        text: `실패: ${errorMessages || "알 수 없는 오류"}`,
+        sessionId: session.id,
+      };
+    }
   }
 
   /**
@@ -266,6 +570,12 @@ export class TaskOrchestrator {
       clearTimeout(timer);
     }
     this.processingTimers.clear();
+
+    // Clear session to task mapping
+    this.sessionTaskMap.clear();
+
+    // Clear pending approvals
+    this.pendingApprovals.clear();
 
     this.logger.info("TaskOrchestrator shutdown");
   }
