@@ -26,13 +26,13 @@ export function getTraceContext(): TraceContext | undefined {
 
 /**
  * Run a function within a trace context.
- * Child operations will inherit and can access this context.
+ * Automatically inherits parent context from AsyncLocalStorage.
  */
 export function runWithTrace<T>(
   layer: ServiceLayer,
-  fn: () => T,
-  parentContext?: TraceContext
+  fn: () => T
 ): T {
+  const parentContext = getTraceContext();
   const traceId = parentContext?.traceId ?? generateId();
   const spanId = generateId();
   const parentSpanId = parentContext?.spanId;
@@ -50,12 +50,13 @@ export function runWithTrace<T>(
 
 /**
  * Run an async function within a trace context.
+ * Automatically inherits parent context from AsyncLocalStorage.
  */
 export async function runWithTraceAsync<T>(
   layer: ServiceLayer,
-  fn: () => Promise<T>,
-  parentContext?: TraceContext
+  fn: () => Promise<T>
 ): Promise<T> {
+  const parentContext = getTraceContext();
   const traceId = parentContext?.traceId ?? generateId();
   const spanId = generateId();
   const parentSpanId = parentContext?.spanId;

@@ -23,6 +23,7 @@ export class Executor {
   private config: SystemConfig;
   private logger: Logger;
   private layerLogger: LayerLogger;
+  private toolLogger: LayerLogger;
   private planner: Planner;
   private toolkit: Toolkit;
   private replanner: Replanner;
@@ -32,6 +33,7 @@ export class Executor {
     this.config = config;
     this.logger = createLogger(config);
     this.layerLogger = this.logger.forLayer("executor");
+    this.toolLogger = this.logger.forLayer("tools");
     this.toolkit = toolkit;
 
     // Get tool runtime if available
@@ -282,8 +284,7 @@ export class Executor {
 
     // Use ToolRuntime if available (supports approval flow)
     if (this.toolRuntime) {
-      const toolLogger = this.logger.forLayer("tools");
-      toolLogger.logInput(`tool:${step.toolId}`, { stepId: step.id, input: step.input });
+      this.toolLogger.logInput(`tool:${step.toolId}`, { stepId: step.id, input: step.input });
 
       const invokeResult = await this.toolRuntime.invoke(
         step.toolId,
