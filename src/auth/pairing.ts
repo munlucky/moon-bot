@@ -12,6 +12,16 @@ export interface PairingCode {
 }
 
 /**
+ * Track used pairing codes with timestamps for replay attack prevention.
+ * Enables TTL-based cleanup and forensic logging.
+ */
+interface UsedCodeEntry {
+  code: string;
+  usedAt: number;
+  userId: string;
+}
+
+/**
  * Generate a cryptographically secure random pairing code.
  * Uses randomBytes instead of UUID for better entropy and unpredictability.
  */
@@ -37,8 +47,8 @@ export class AuthManager {
   private logger: Logger;
   private pendingCodes = new Map<string, PairingCode>();
   private approvedUsers = new Set<string>();
-  // Track used codes to prevent replay attacks
-  private usedCodes = new Set<string>();
+  // Track used codes with timestamps for replay attack prevention and TTL cleanup
+  private usedCodes = new Map<string, UsedCodeEntry>();
 
   constructor(config: SystemConfig) {
     this.config = config;
@@ -63,8 +73,11 @@ export class AuthManager {
 
   approve(code: string): boolean {
     // Check if code was already used (replay attack prevention)
-    if (this.usedCodes.has(code)) {
-      this.logger.warn(`Replay attack detected: code already used`);
+    const existingEntry = this.usedCodes.get(code);
+    if (existingEntry) {
+      this.logger.warn(
+        `Replay attack detected: code used at ${new Date(existingEntry.usedAt).toISOString()}`
+      );
       return false;
     }
 
@@ -84,7 +97,13 @@ export class AuthManager {
     pairing.approved = true;
     this.approvedUsers.add(pairing.userId);
     this.pendingCodes.delete(code);
-    this.usedCodes.add(code); // Mark as used
+
+    // Mark as used with timestamp for TTL cleanup
+    this.usedCodes.set(code, {
+      code,
+      usedAt: Date.now(),
+      userId: pairing.userId
+    });
 
     this.logger.info(`Pairing approved for ${pairing.userId}`);
     return true;
@@ -97,32 +116,46 @@ export class AuthManager {
   /**
    * Validate an authentication token.
    * Uses constant-time comparison via hash to prevent timing attacks.
-   * Note: Tokens in config should be stored as hashes, not plaintext.
+   *
+   * Token format requirements:
+   * - Default: SHA-256 hashed tokens (64 hex chars)
+   * - Legacy mode: Plaintext tokens (requires allowLegacyTokens: true)
+   *
+   * Migration: Use AuthManager.hashToken() to convert plaintext tokens
    */
   validate(token: string): boolean {
-    if (!this.config.gateways[0]?.auth?.tokens) {
+    const authConfig = this.config.gateways[0]?.auth;
+    if (!authConfig?.tokens) {
       return true; // No auth configured
     }
 
     const tokenHash = hashToken(token);
-    const validTokens = Object.values(this.config.gateways[0].auth.tokens);
+    const validTokens = Object.values(authConfig.tokens);
 
-    // Check if any token hash matches
-    // Note: In production, config should store pre-hashed tokens
+    // Check legacy token support (default: false)
+    const allowLegacy = authConfig.allowLegacyTokens ?? false;
+
     return validTokens.some(validToken => {
-      // Support both plaintext (legacy) and hashed tokens
-      if (validToken.length === 64) {
-        // Assume it's a SHA-256 hash (64 hex chars)
+      // SHA-256 hash format: 64 hex characters
+      if (validToken.length === 64 && /^[a-f0-9]{64}$/i.test(validToken)) {
         return validToken === tokenHash;
-      } else {
-        // Legacy plaintext comparison (not recommended)
+      }
+      // Legacy plaintext comparison (only if allowLegacyTokens is true)
+      if (allowLegacy) {
         return validToken === token;
       }
+      return false;
     });
   }
 
+  /**
+   * Clean up expired entries to prevent memory leaks.
+   * - Removes expired pending pairing codes
+   * - Removes used codes older than 24 hours (TTL-based cleanup)
+   */
   cleanup(): void {
     const now = Date.now();
+    const TTL_24H = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
     // Clean expired pairing codes
     for (const [code, pairing] of this.pendingCodes.entries()) {
@@ -131,10 +164,12 @@ export class AuthManager {
       }
     }
 
-    // Clean used codes older than 1 hour to prevent memory leak
-    const oneHourAgo = now - 60 * 60 * 1000;
-    // Note: We don't have creation time for used codes, so we do a simple cleanup
-    // In production, track creation time for used codes
+    // Clean used codes older than 24 hours (TTL-based cleanup)
+    for (const [code, entry] of this.usedCodes.entries()) {
+      if (now - entry.usedAt > TTL_24H) {
+        this.usedCodes.delete(code);
+      }
+    }
   }
 
   /**

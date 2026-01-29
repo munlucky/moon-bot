@@ -1,19 +1,22 @@
 // WebSocket Gateway Server
 
 import { WebSocketServer, WebSocket } from "ws";
-import { randomUUID } from "crypto";
+import { randomUUID, timingSafeEqual, createHash } from "crypto";
 import type { SystemConfig, ClientInfo, ConnectParams, ChatMessage } from "../types/index.js";
 import { JsonRpcServer } from "./json-rpc.js";
 import { createLogger, type Logger } from "../utils/logger.js";
+import { ErrorSanitizer } from "../utils/error-sanitizer.js";
 import { ToolRuntime } from "../tools/runtime/ToolRuntime.js";
 import { createToolHandlers } from "./handlers/tools.handler.js";
 
 /**
  * Rate limiter to prevent connection flooding.
- * Tracks connection attempts per IP address within a time window.
+ * Tracks connection attempts per IP address AND per token within a time window.
+ * Dual-layer rate limiting prevents bypass via multiple IP addresses.
  */
 class ConnectionRateLimiter {
   private attempts = new Map<string, number[]>();
+  private tokenAttempts = new Map<string, number[]>();
   private readonly windowMs: number;
   private readonly maxAttempts: number;
 
@@ -50,18 +53,58 @@ class ConnectionRateLimiter {
   }
 
   /**
+   * Check if a token is within rate limits.
+   * Prevents bypass of IP-based rate limiting via multiple IPs.
+   * @param token Authentication token (first 8 chars for logging)
+   * @returns true if connection is allowed, false if rate limited
+   */
+  checkTokenLimit(token: string): boolean {
+    const now = Date.now();
+    const windowStart = now - this.windowMs;
+
+    // Hash token for storage (SHA-256 to prevent collisions)
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    let attempts = this.tokenAttempts.get(tokenHash) || [];
+
+    // Filter out attempts outside the time window
+    attempts = attempts.filter(timestamp => timestamp > windowStart);
+
+    // Check if limit exceeded
+    if (attempts.length >= this.maxAttempts) {
+      return false;
+    }
+
+    // Add current attempt
+    attempts.push(now);
+    this.tokenAttempts.set(tokenHash, attempts);
+
+    return true;
+  }
+
+  /**
    * Clean up old entries to prevent memory leaks.
    */
   cleanup(): void {
     const now = Date.now();
     const windowStart = now - this.windowMs;
 
+    // Clean IP-based entries
     for (const [ip, attempts] of this.attempts.entries()) {
       const validAttempts = attempts.filter(timestamp => timestamp > windowStart);
       if (validAttempts.length === 0) {
         this.attempts.delete(ip);
       } else {
         this.attempts.set(ip, validAttempts);
+      }
+    }
+
+    // Clean token-based entries
+    for (const [tokenHash, attempts] of this.tokenAttempts.entries()) {
+      const validAttempts = attempts.filter(timestamp => timestamp > windowStart);
+      if (validAttempts.length === 0) {
+        this.tokenAttempts.delete(tokenHash);
+      } else {
+        this.tokenAttempts.set(tokenHash, validAttempts);
       }
     }
   }
@@ -121,13 +164,48 @@ export class GatewayServer {
       if (authConfig?.tokens && Object.keys(authConfig.tokens).length > 0) {
         if (!token) {
           this.logger.warn("Connection attempt without token");
-          throw new Error("Authentication required");
+          const sanitized = ErrorSanitizer.sanitizeWithCode(
+            new Error("Authentication required"),
+            'AUTH_MISSING_TOKEN'
+          );
+          throw new Error(sanitized.message);
         }
-        // Use timing-safe comparison (check token exists)
-        const isValidToken = Object.keys(authConfig.tokens).includes(token);
+
+        // Check token-based rate limit (prevents IP bypass)
+        if (!this.rateLimiter.checkTokenLimit(token)) {
+          this.logger.warn(`Token rate limited`);
+          const sanitized = ErrorSanitizer.sanitizeWithCode(
+            new Error("Rate limit exceeded"),
+            'RATE_LIMIT_EXCEEDED'
+          );
+          throw new Error(sanitized.message);
+        }
+
+        // Use timing-safe comparison to prevent timing attacks
+        // Compare against VALUES (hashed tokens), not keys
+        // Must iterate ALL tokens to prevent timing leak via short-circuit
+        let isValidToken = false;
+        const validTokens = Object.values(authConfig.tokens);
+        for (const validToken of validTokens) {
+          try {
+            if (timingSafeEqual(
+              Buffer.from(validToken, 'hex'),
+              Buffer.from(token, 'hex')
+            )) {
+              isValidToken = true;
+            }
+          } catch {
+            // Length mismatch: continue checking, still takes same time
+          }
+        }
+
         if (!isValidToken) {
           this.logger.warn(`Invalid token attempt from ${clientType}`);
-          throw new Error("Authentication failed");
+          const sanitized = ErrorSanitizer.sanitizeWithCode(
+            new Error("Authentication failed"),
+            'AUTH_INVALID_TOKEN'
+          );
+          throw new Error(sanitized.message);
         }
       }
 

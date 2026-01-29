@@ -12,6 +12,61 @@ interface HttpRequestInput {
   timeoutMs?: number;
 }
 
+/**
+ * Validate HTTP headers for security.
+ * Blocks dangerous headers and XSS patterns.
+ */
+function validateHeaders(headers?: Record<string, string>): { valid: boolean; reason?: string } {
+  if (!headers) {
+    return { valid: true };
+  }
+
+  // Headers that could be used for attacks or should be controlled by fetch
+  const dangerousHeaders = [
+    'host',                  // Could be used for cache poisoning
+    'referer',               // Information leakage
+    'origin',                // CORS bypass attempt
+    'cookie',                // Credential forwarding
+    'authorization',         // Credential forwarding
+    'proxy-authorization',   // Credential forwarding
+    'user-agent',            // Could be used for fingerprinting/injection
+    'accept',                // Could manipulate content negotiation
+    'accept-encoding',       // Could affect compression attacks
+    'content-length',        // Could be used for request smuggling
+    'content-type',          // Could bypass boundary checks
+  ];
+
+  // XSS and injection patterns in header values
+  const forbiddenPatterns = [
+    '<script',
+    'javascript:',
+    'onerror=',
+    'onload=',
+    'onclick=',
+    'data:',
+    'vbscript:',
+  ];
+
+  for (const [key, value] of Object.entries(headers)) {
+    const lowerKey = key.toLowerCase();
+
+    // Check for forbidden headers
+    if (dangerousHeaders.includes(lowerKey)) {
+      return { valid: false, reason: `Forbidden header: ${key}` };
+    }
+
+    // Check for dangerous patterns in values
+    const lowerValue = value.toLowerCase();
+    for (const pattern of forbiddenPatterns) {
+      if (lowerValue.includes(pattern)) {
+        return { valid: false, reason: 'Dangerous content in headers' };
+      }
+    }
+  }
+
+  return { valid: true };
+}
+
 interface HttpResponse {
   status: number;
   statusText: string;
@@ -58,6 +113,21 @@ export function createHttpRequestTool(): ToolSpec<HttpRequestInput, HttpResponse
       const startTime = Date.now();
 
       try {
+        // Validate headers for security
+        if (input.headers) {
+          const headerCheck = validateHeaders(input.headers);
+          if (!headerCheck.valid) {
+            return {
+              ok: false,
+              error: {
+                code: "INVALID_HEADERS",
+                message: headerCheck.reason ?? "Invalid headers",
+              },
+              meta: { durationMs: Date.now() - startTime },
+            };
+          }
+        }
+
         // SSRF check
         const ssrfCheck = SsrfGuard.checkUrl(input.url);
         if (!ssrfCheck.allowed) {

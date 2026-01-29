@@ -41,33 +41,42 @@ export class CommandSanitizer {
 
   /**
    * Default allowlist for safe commands.
+   * Commands must be explicitly listed to be executed.
+   *
+   * Security considerations:
+   * - Each command should be vetted for safety
+   * - Flag combinations are NOT validated (user responsibility)
+   * - Add new commands only after security review
+   *
+   * Categories:
+   * - Version control: git
+   * - Package managers: pnpm, npm, yarn, bun
+   * - Runtimes: node, python, python3, deno
+   * - Build tools: pip, cargo, go
+   * - Safe file operations: ls, cat, head, tail, grep, find, stat, file, which, where, echo, pwd
+   * - Safe directory operations: cd, mkdir, cp, mv
    */
-  private static readonly DEFAULT_ALLOWLIST = [
+  private static readonly DEFAULT_ALLOWLIST: readonly string[] = [
+    // Version control
     "git",
-    "pnpm",
-    "npm",
-    "node",
-    "python",
-    "python3",
-    "pip",
-    "bun",
-    "deno",
-    "ls",
-    "cat",
-    "head",
-    "tail",
-    "grep",
-    "find",
-    "echo",
-    "pwd",
-    "cd",
-    "mkdir",
-    "cp",
-    "mv",
-    "stat",
-    "file",
-    "which",
-    "where",
+
+    // Package managers
+    "pnpm", "npm", "yarn", "bun",
+
+    // Runtimes
+    "node", "python", "python3", "deno",
+
+    // Build tools
+    "pip", "cargo", "go",
+
+    // Safe file operations
+    "ls", "cat", "head", "tail", "grep", "find",
+    "stat", "file", "which", "where", "echo", "pwd",
+
+    // Safe directory operations (single-level, no destructive flags)
+    "cd", "mkdir", "cp", "mv",
+
+    // TODO: Add new commands here after security review
   ];
 
   private denylist: string[];
@@ -77,8 +86,8 @@ export class CommandSanitizer {
     denylist?: string[],
     allowlist?: string[]
   ) {
-    this.denylist = denylist ?? CommandSanitizer.DEFAULT_DENYLIST;
-    this.allowlist = allowlist ?? CommandSanitizer.DEFAULT_ALLOWLIST;
+    this.denylist = denylist ?? [...CommandSanitizer.DEFAULT_DENYLIST];
+    this.allowlist = allowlist ?? [...CommandSanitizer.DEFAULT_ALLOWLIST];
   }
 
   /**

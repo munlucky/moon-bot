@@ -5,3 +5,8 @@ dist/
 .env
 .env.local
 *.tsbuildinfo
+
+.history
+#클로드 작업 관련 파일
+.claude/docs/tasks/*/context.md
+.claude/analysisContext.yaml

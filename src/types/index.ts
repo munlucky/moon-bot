@@ -33,6 +33,18 @@ export interface GatewayConfig {
   host: string;
   auth?: {
     tokens?: Record<string, string>;
+    /**
+     * Allow legacy plaintext tokens (NOT RECOMMENDED).
+     * Default: false (requires SHA-256 hashed tokens)
+     *
+     * Migration path:
+     * 1. Hash existing tokens using AuthManager.hashToken()
+     * 2. Update config with hashed tokens
+     * 3. Set allowLegacyTokens: false
+     *
+     * @deprecated Use SHA-256 hashed tokens instead
+     */
+    allowLegacyTokens?: boolean;
   };
   allowFrom?: string[];
 }
