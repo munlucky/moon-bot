@@ -657,11 +657,11 @@ process.on('SIGINT', () => server.shutdown());
 
 | 위치 | 이슈 | 우선순위 |
 |------|------|----------|
-| `src/orchestrator/TaskOrchestrator.ts:73` | 730줄 대형 클래스 | P1 |
-| `src/agents/executor.ts:45` | `unknown` 타입 사용 | P2 |
-| `src/gateway/server.ts:120` | 하드코딩된 타임아웃 (30000) | P2 |
-| `src/llm/LLMClient.ts:89` | 에러 메시지 한국어/영어 혼용 | P3 |
-| `src/tools/runtime/ToolRuntime.ts:67` | any 타입 캐스팅 | P2 |
+| `src/orchestrator/TaskOrchestrator.ts` | 730줄 대형 클래스 | P1 |
+| `src/agents/executor.ts:145` | `result?: unknown` 타입 사용 | P2 |
+| `src/gateway/server.ts:147` | 하드코딩된 타임아웃 (30000) | P2 |
+| `src/llm/LLMClient.ts:168` | 에러 메시지 한국어/영어 혼용 | P3 |
+| `src/tools/runtime/ToolRuntime.ts:234` | `as never` 타입 캐스팅 | P2 |
 
 ### 테스트 부채
 

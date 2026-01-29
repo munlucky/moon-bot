@@ -92,7 +92,7 @@ Testing: Vitest
 │  │                   LLM Client                              │   │
 │  │  ┌────────────┐            ┌────────────┐                 │   │
 │  │  │  OpenAI    │    또는    │    GLM     │                 │   │
-│  │  │ (GPT-4o)   │            │(glm-4.7)   │                 │   │
+│  │  │ (GPT-4o)   │            │(glm-4.7-flash)│              │   │
 │  │  └────────────┘            └────────────┘                 │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
@@ -187,19 +187,19 @@ src/
         │
         ▼
 [2] DiscordAdapter.handleMessage()
-    └── src/channels/discord.ts:45
+    └── src/channels/discord.ts:149
         │
         ▼
 [3] Gateway RPC 호출: "chat" 메서드
     └── WebSocket으로 JSON-RPC 요청 전송
         │
         ▼
-[4] GatewayServer.handleChatMessage()
-    └── src/gateway/server.ts:180
+[4] GatewayServer "chat.send" RPC Handler
+    └── src/gateway/server.ts:313
         │
         ▼
 [5] TaskOrchestrator.createTask()
-    └── src/orchestrator/TaskOrchestrator.ts:95
+    └── src/orchestrator/TaskOrchestrator.ts:376
     └── Task 상태: PENDING
         │
         ▼
@@ -212,7 +212,7 @@ src/
         │
         ▼
 [8] Executor.execute()
-    └── src/agents/executor.ts:35
+    └── src/agents/executor.ts:49
         │
         ├──▶ [8a] Planner.plan()
         │         └── LLM에게 계획 요청
