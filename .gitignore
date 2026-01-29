@@ -19,3 +19,4 @@ config.json
 .claude/docs/tasks/*/flow-report.md
 .gitignore
 .claude/docs/tasks/
+~/.moonbot
