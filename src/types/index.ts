@@ -220,3 +220,14 @@ export interface ToolRegistry {
   list(): ToolSpec[];
   has(id: string): boolean;
 }
+
+/**
+ * Response from Task execution to be sent back to channels.
+ */
+export interface TaskResponse {
+  taskId?: string;
+  channelId: string;
+  text: string;
+  status: "completed" | "failed" | "pending";
+  metadata?: Record<string, unknown>;
+}

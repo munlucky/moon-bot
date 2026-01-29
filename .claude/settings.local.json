@@ -51,7 +51,9 @@
       "Bash(npx:*)",
       "mcp__memory__create_entities",
       "Skill(commit)",
-      "Skill(commit:*)"
+      "Skill(commit:*)",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm install:*)"
     ],
     "deny": [],
     "ask": []

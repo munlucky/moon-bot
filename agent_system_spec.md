@@ -144,16 +144,52 @@ interface ToolSpec {
 
 ---
 
-## 8. 개발 및 운영 CLI
+## 8. Gateway vs Task Orchestrator 책임 분리
 
-### 8.1 핵심 명령
+### 8.1 Gateway 역할 (연결 계층)
+Gateway는 순수한 **연결 및 라우팅 계층**입니다:
+- WebSocket 연결 관리
+- JSON-RPC 메시지 라우팅
+- 채널 등록/인증
+- Rate limiting
+- **하지 않는 것**: 프로세스 실행, 작업 상태 관리
+
+### 8.2 Task Orchestrator 역할 (실행 계층)
+Task Orchestrator는 **실행 및 조율 계층**입니다:
+- Task/Job 생명주기 관리
+- Agent 조율 (Planner/Executor/Replanner)
+- 다중 채널 → 단일 Task 매핑
+- 실패/재시도/중단 처리
+
+### 8.3 채널 vs Task 비교
+
+| 항목 | 채널 (Channel) | Task |
+|------|----------------|------|
+| 역할 | 입력/출력 뷰 | 실행 객체 |
+| 실행 단위 | ❌ | ✅ |
+| 상태 관리 | ❌ | ✅ |
+| 병렬 실행 | ❌ | ✅ |
+
+### 8.4 메시지 흐름
+
+```
+Discord/Slack → Gateway (chat.send) → Task Orchestrator → Agent
+                                              ↓
+Discord/Slack ← Gateway (broadcast) ← Task Result ←──┘
+```
+
+---
+
+## 9. 개발 및 운영 CLI
+
+### 9.1 핵심 명령
 - `moltbot gateway status`
 - `moltbot gateway call <rpc>`
 - `moltbot logs --follow`
 - `moltbot pairing approve <code>`
 - `moltbot doctor`
 
-### 8.2 개발 환경
+### 9.2 개발 환경
 - TypeScript (ESM)
 - Node.js 22+
 - Bun (테스트, watch 모드)

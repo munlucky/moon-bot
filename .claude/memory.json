@@ -1,8 +1,8 @@
 {"type":"entity","name":"moonbot::Boundary::AlwaysDo","entityType":"boundary","observations":["커밋 전 pnpm lint 실행","TypeScript 빌드 통과 확인 (pnpm build)","보안 검토 후 하드코딩된 시크릿 없는지 확인","*-config.json 파일 .gitignore에 추가","개인 설정 파일 커밋 전 확인"]}
 {"type":"entity","name":"moonbot::Boundary::AskFirst","entityType":"boundary","observations":["새로운 채널 어댑터 추가 시","외부 포트 바인딩 설정 변경 시","세션 저장 경로 구조 변경 시","핵심 도구(Browser, HTTP, Desktop) 승인 정책 수정 시"]}
 {"type":"entity","name":"moonbot::Boundary::NeverDo","entityType":"boundary","observations":["하드코딩된 API 키/토큰 커밋",".env 파일 커밋","루프백이 아닌 외부 바인딩 시 인증 없이 노출","SSRF 보호 없이 HTTP 도구 사용"]}
-{"type":"entity","name":"moonbot::Component::Gateway","entityType":"component","observations":["WebSocket 서버 (포트 18789)","JSON-RPC 프로토콜 핸들러","세션/채널/노드/훅 통합 관리","파일 위치: src/gateway/"]}
-{"type":"entity","name":"moonbot::Component::Channels","entityType":"component","observations":["멀티 서피스 채널 어댑터","Discord 어댑터 구현 (discord.js)","Mention Gating (@agent 언급 시만 활성화)","DM 페어링 승인 흐름","파일 위치: src/channels/"]}
+{"type":"entity","name":"moonbot::Component::Gateway","entityType":"component","observations":["WebSocket 서버 (포트 18789)","JSON-RPC 프로토콜 핸들러","세션/채널/노드/훅 통합 관리","파일 위치: src/gateway/","chat.send 핸들러: 처리 후 chat.response 브로드캐스트","TaskResponse 타입 도입 (channelId, text, status, metadata)"]}
+{"type":"entity","name":"moonbot::Component::Channels","entityType":"component","observations":["멀티 서피스 채널 어댑터","Discord 어댑터 구현 (discord.js)","Mention Gating (@agent 언급 시만 활성화)","DM 페어링 승인 흐름","파일 위치: src/channels/","Discord Adapter: ChannelGatewayClient 통합 (자동 Gateway 연결)","chat.response notification 수신 및 Discord 채널로 전달","sendToGateway: WebSocket으로 chat.send RPC 호출"]}
 {"type":"entity","name":"moonbot::Component::Agents","entityType":"component","observations":["Planner-Executor-Replanner 모델","Planner: 목표 분해 (고성능 LLM)","Executor: 도구 호출 및 결과 수집","Replanner: 실패 시 대체 도구 선택","파일 위치: src/agents/"]}
 {"type":"entity","name":"moonbot::Component::Tools","entityType":"component","observations":["TypeBox 기반 JSON Schema 계약","Browser Tool: Playwright 웹 제어","HTTP Tool: API 호출 + SSRF 가드","Filesystem Tool: 파일 I/O + 경로 검증","Desktop Tool: system.run + 명령어 sanitization","Approval System: Lobster 승인 흐름","파일 위치: src/tools/"]}
 {"type":"entity","name":"moonbot::Component::Sessions","entityType":"component","observations":["JSONL 형식 저장","저장 경로: ~/.clawdbot/agents/<agentId>/sessions/<sessionId>.jsonl","세션 공유 (sessions.send)","컴팩션 및 리플레이 기능","파일 위치: src/sessions/"]}
@@ -20,6 +20,7 @@
 {"type":"entity","name":"moonbot::Convention::EnvVarNaming","entityType":"convention","observations":["환경 변수 네이밍: MOONBOT_<SECTION>_<KEY>","예: MOONBOT_DISCORD_TOKEN, MOONBOT_GATEWAY_PORT","섹션: DISCORD, GATEWAY, STORAGE 등"]}
 {"type":"entity","name":"moonbot::Component::ConfigCommand","entityType":"component","observations":["CLI 설정 관리 명령어 (import, export, path)","위치: src/cli/commands/config.ts","config import <file>: JSON 파일에서 설정 가져오기","config export <file>: 현재 설정 내보내기","config path: 설정 파일 위치 표시","--force 옵션으로 기존 설정 덮어쓰기","자동 백업 생성 (최대 10개 보관)"]}
 {"type":"entity","name":"moonbot::Component::DiscordBot","entityType":"component","observations":["Discord 봇 실행 엔트리 포인트","위치: src/discord-bot.ts","활성화된 Discord 채널 자동 시작","SIGINT 핸들링으로 graceful shutdown","별도 프로세스로 실행 (npm run discord)"]}
+{"type":"entity","name":"moonbot::Component::ChannelGatewayClient","entityType":"component","observations":["채널 어댑터용 WebSocket 클라이언트","위치: src/channels/GatewayClient.ts","자동 재연결 (exponential backoff, 최대 10회)","EventEmitter 기반 notification 핸들링","RPC 타임아웃 (30초 기본)","Gateway와 JSON-RPC 통신"]}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Channels","relationType":"manages"}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Agents","relationType":"orchestrates"}
 {"type":"relation","from":"moonbot::Component::Agents","to":"moonbot::Component::Tools","relationType":"uses"}
@@ -34,3 +35,5 @@
 {"type":"relation","from":"moonbot::Component::ConfigManager","to":"moonbot::Convention::TokenMasking","relationType":"implements"}
 {"type":"relation","from":"moonbot::Component::ConfigCommand","to":"moonbot::Component::ConfigManager","relationType":"uses"}
 {"type":"relation","from":"moonbot::Component::DiscordBot","to":"moonbot::Component::Channels","relationType":"instantiates"}
+{"type":"relation","from":"moonbot::Component::Channels","to":"moonbot::Component::ChannelGatewayClient","relationType":"uses"}
+{"type":"relation","from":"moonbot::Component::ChannelGatewayClient","to":"moonbot::Component::Gateway","relationType":"connects"}

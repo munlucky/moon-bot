@@ -90,9 +90,63 @@
 - `pnpm gateway:watch` 개발 자동화
 
 
-## 8. 향후 로드맵
+## 8. Task Orchestrator 및 채널 독립성
 
-### 8.1 기술 발전 방향
+### 8.1 Task Orchestrator 개념
+
+Task Orchestrator는 Gateway와 Agent 사이에서 **작업 실행을 조율**하는 핵심 컴포넌트입니다:
+
+```
+Channel → Gateway → Task Orchestrator → Agent (Planner/Executor)
+                          ↓
+                    Task Queue
+                    Task State
+                    Result Routing
+```
+
+**주요 책임:**
+- Task 생성 및 큐 관리
+- Agent 인스턴스 조율
+- 다중 채널에서 온 메시지를 단일 Task로 매핑
+- 실행 결과를 원본 채널로 라우팅
+
+### 8.2 채널 독립성 원칙
+
+채널은 **순수한 입출력 뷰**로 설계됩니다:
+
+1. **상태 무관성**: 채널은 Task 상태를 저장하지 않음
+2. **교체 가능성**: 동일 Task에 여러 채널이 연결될 수 있음
+3. **단방향 의존**: 채널 → Gateway 방향의 의존만 존재
+
+```
+Discord ─┐
+Slack ───┼→ Gateway → Task → Agent
+CLI ─────┘
+```
+
+### 8.3 다중 채널 Observer 패턴
+
+하나의 Task 실행 결과를 여러 채널에서 관찰할 수 있습니다:
+
+```typescript
+// 예시: Task 완료 시 모든 등록된 채널에 브로드캐스트
+task.on('complete', (result) => {
+  for (const channelId of task.observers) {
+    gateway.sendToChannel(channelId, result);
+  }
+});
+```
+
+**활용 시나리오:**
+- Discord에서 시작한 작업을 CLI에서도 모니터링
+- 장시간 작업 결과를 여러 채널에 동시 알림
+- 채널 간 컨텍스트 공유
+
+---
+
+## 9. 향후 로드맵
+
+### 9.1 기술 발전 방향
 - **멀티 에이전트 슬롯**: 하나의 Gateway에서 성격/역할이 다른 에이전트 동시 운영
 - **로컬 소형 모델 연동(sLLM)**: 기본 요약, 감정 분석 등은 오프라인 모델 처리
 - **MCP 지원**: 외부 도구를 Skill 형태로 등록 및 동적 확장

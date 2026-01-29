@@ -7,13 +7,15 @@ import {
   Partials,
   ButtonInteraction,
 } from "discord.js";
-import type { SystemConfig, ChatMessage } from "../types/index.js";
+import type { SystemConfig, ChatMessage, TaskResponse } from "../types/index.js";
 import { createLogger, type Logger } from "../utils/logger.js";
 import { parseButtonCustomId } from "../tools/approval/handlers/discord-approval.js";
+import { ChannelGatewayClient } from "./GatewayClient.js";
 
 // Type for the gateway call method (will be available when integration is complete)
 interface GatewayClient {
   call(method: string, params: unknown): Promise<unknown>;
+  isConnected(): boolean;
 }
 
 export class DiscordAdapter {
@@ -21,6 +23,7 @@ export class DiscordAdapter {
   private config: SystemConfig;
   private gatewayUrl: string;
   private gatewayClient: GatewayClient | null = null;
+  private channelGatewayClient: ChannelGatewayClient | null = null;
   private logger: Logger;
   private connected = false;
 
@@ -79,6 +82,64 @@ export class DiscordAdapter {
     });
 
     await this.client.login(discordConfig.token);
+
+    // Connect to Gateway
+    await this.connectToGateway();
+  }
+
+  /**
+   * Connect to Gateway server and set up notification handlers.
+   */
+  private async connectToGateway(): Promise<void> {
+    this.channelGatewayClient = new ChannelGatewayClient({
+      url: this.gatewayUrl,
+      reconnectInterval: 5000,
+      maxReconnectAttempts: 10,
+    });
+
+    this.channelGatewayClient.on("notification", (method: string, params: unknown) => {
+      if (method === "chat.response") {
+        this.handleAgentResponse(params).catch((error) => {
+          this.logger.error("Failed to handle agent response", { error });
+        });
+      }
+    });
+
+    this.channelGatewayClient.on("connected", () => {
+      this.logger.info("Connected to Gateway");
+    });
+
+    this.channelGatewayClient.on("disconnected", () => {
+      this.logger.warn("Disconnected from Gateway");
+    });
+
+    this.channelGatewayClient.on("reconnecting", (attempt: number) => {
+      this.logger.info(`Reconnecting to Gateway (attempt ${attempt})`);
+    });
+
+    this.channelGatewayClient.on("error", (error: Error) => {
+      this.logger.error("Gateway client error", { error });
+    });
+
+    try {
+      await this.channelGatewayClient.connect();
+    } catch (error) {
+      this.logger.error("Failed to connect to Gateway", { error });
+      // Don't throw - Discord can still operate, just won't send to Gateway
+    }
+  }
+
+  /**
+   * Handle agent response from Gateway.
+   */
+  private async handleAgentResponse(params: unknown): Promise<void> {
+    const response = params as TaskResponse;
+    if (!response.channelId || !response.text) {
+      this.logger.warn("Invalid agent response", { params });
+      return;
+    }
+
+    await this.sendToChannel(response.channelId, response.text);
   }
 
   private async handleMessage(message: Message): Promise<void> {
@@ -177,8 +238,29 @@ export class DiscordAdapter {
   }
 
   private async sendToGateway(message: ChatMessage): Promise<void> {
-    // TODO: Implement WebSocket client to send messages to gateway
-    this.logger.debug("Sending message to gateway", { message });
+    // Use ChannelGatewayClient if available
+    if (this.channelGatewayClient?.isConnected()) {
+      try {
+        await this.channelGatewayClient.call("chat.send", message);
+        this.logger.debug("Message sent to Gateway via WebSocket", { message });
+        return;
+      } catch (error) {
+        this.logger.error("Failed to send message via WebSocket", { error });
+      }
+    }
+
+    // Fallback to legacy gatewayClient if set
+    if (this.gatewayClient?.isConnected()) {
+      try {
+        await this.gatewayClient.call("chat.send", message);
+        this.logger.debug("Message sent to Gateway via legacy client", { message });
+        return;
+      } catch (error) {
+        this.logger.error("Failed to send message via legacy client", { error });
+      }
+    }
+
+    this.logger.warn("No Gateway connection available, message not sent", { message });
   }
 
   async sendToChannel(channelId: string, text: string): Promise<void> {
@@ -195,6 +277,7 @@ export class DiscordAdapter {
   }
 
   stop(): void {
+    this.channelGatewayClient?.disconnect();
     this.client?.destroy();
     this.connected = false;
     this.logger.info("Discord adapter stopped");

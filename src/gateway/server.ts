@@ -2,7 +2,7 @@
 
 import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID, timingSafeEqual, createHash } from "crypto";
-import type { SystemConfig, ClientInfo, ConnectParams, ChatMessage } from "../types/index.js";
+import type { SystemConfig, ClientInfo, ConnectParams, ChatMessage, TaskResponse } from "../types/index.js";
 import { JsonRpcServer } from "./json-rpc.js";
 import { createLogger, type Logger } from "../utils/logger.js";
 import { ErrorSanitizer } from "../utils/error-sanitizer.js";
@@ -240,8 +240,29 @@ export class GatewayServer {
     this.rpc.register("chat.send", async (params) => {
       const message = params as ChatMessage;
       this.logger.info(`Chat message from ${message.channelId}: ${message.text}`);
-      // Will be handled by agent module
-      return { status: "queued", sessionId: message.sessionId || "new" };
+
+      // TODO: In Phase 2, this will be delegated to TaskOrchestrator
+      // For now, provide a simple echo response to verify the communication loop
+      const sessionId = message.sessionId || randomUUID();
+
+      // Simulate async processing - in production, Agent would process and respond
+      setImmediate(() => {
+        const response: TaskResponse = {
+          channelId: message.channelId,
+          text: `[Echo] Received: ${message.text}`,
+          status: "completed",
+          metadata: {
+            sessionId,
+            agentId: message.agentId,
+            timestamp: Date.now(),
+          },
+        };
+
+        // Broadcast response to all connected channels
+        this.broadcast("chat.response", response);
+      });
+
+      return { status: "queued", sessionId };
     });
 
     // session.get: Get session by ID
