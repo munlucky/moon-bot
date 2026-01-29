@@ -11,7 +11,7 @@
 {"type":"entity","name":"moonbot::Component::CLI","entityType":"component","observations":["명령어: moonbot gateway status, logs, doctor, call, pairing","Gateway 직접 RPC 호출 지원","보안/권한 진단 기능","파일 위치: src/cli/"]}
 {"type":"entity","name":"moonbot::Convention::ToolRegistration","entityType":"convention","observations":["toolkit.register({ id, schema, run }) 인터페이스","TypeBox 사용한 스키마 정의","requiresApproval 옵션으로 승인 필요 도구 지정","평탄화된 구조 권장"]}
 {"type":"entity","name":"moonbot::Convention::Naming","entityType":"convention","observations":["컴포넌트 파일: PascalCase (예: BrowserTool.ts)","타입 정의: 인터페이스/타입 분리","CLI 명령: kebab-case (예: gateway status)"]}
-{"type":"entity","name":"moonbot","entityType":"project","observations":["Local-first AI Agent System","Moltbot 프레임워크 기반","TypeScript (ESM), Node.js 22+","WebSocket JSON-RPC (포트 18789)","멀티 서피스 채널 (Discord 등)","CLI: moonbot","PRD: local_ai_agent_prd.md","Spec: agent_system_spec.md"]}
+{"type":"entity","name":"moonbot","entityType":"project","observations":["Local-first AI Agent System","Moltbot 프레임워크 기반","TypeScript (ESM), Node.js 22+","WebSocket JSON-RPC (포트 18789)","멀티 서피스 채널 (Discord 등)","CLI: moonbot","PRD: local_ai_agent_prd.md","Spec: agent_system_spec.md","README.md 문서 추가 (프로젝트 개요, 설치, 빠른 시작 가이드)"]}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Channels","relationType":"manages"}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Agents","relationType":"orchestrates"}
 {"type":"relation","from":"moonbot::Component::Agents","to":"moonbot::Component::Tools","relationType":"uses"}
