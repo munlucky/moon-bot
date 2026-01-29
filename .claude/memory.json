@@ -21,6 +21,15 @@
 {"type":"entity","name":"moonbot::Component::ConfigCommand","entityType":"component","observations":["CLI 설정 관리 명령어 (import, export, path)","위치: src/cli/commands/config.ts","config import <file>: JSON 파일에서 설정 가져오기","config export <file>: 현재 설정 내보내기","config path: 설정 파일 위치 표시","--force 옵션으로 기존 설정 덮어쓰기","자동 백업 생성 (최대 10개 보관)"]}
 {"type":"entity","name":"moonbot::Component::DiscordBot","entityType":"component","observations":["Discord 봇 실행 엔트리 포인트","위치: src/discord-bot.ts","활성화된 Discord 채널 자동 시작","SIGINT 핸들링으로 graceful shutdown","별도 프로세스로 실행 (npm run discord)"]}
 {"type":"entity","name":"moonbot::Component::ChannelGatewayClient","entityType":"component","observations":["채널 어댑터용 WebSocket 클라이언트","위치: src/channels/GatewayClient.ts","자동 재연결 (exponential backoff, 최대 10회)","EventEmitter 기반 notification 핸들링","RPC 타임아웃 (30초 기본)","Gateway와 JSON-RPC 통신"]}
+{"type":"entity","name":"moonbot::Component::TaskOrchestrator","entityType":"component","observations":["태스크 생성 및 상태 관리 (PENDING/RUNNING/FAILED/DONE)","Per-channel 실행 큐 관리","Gateway에서 chat.send 요청을 받아 Task로 변환","Task 실행 결과를 chat.response로 브로드캐스트","src/orchestrator/TaskOrchestrator.ts가 핵심 구현체","2026-01-29: 스켈레톤 구현 완료 (Echo placeholder 포함)"]}
+{"type":"entity","name":"moonbot::Component::TaskRegistry","entityType":"component","observations":["In-memory Task 저장소","Task 상태 전이 관리 (PENDING -> RUNNING -> FAILED|DONE)","task_id 생성 규칙: UUID + timestamp","Task 이벤트 리스너 지원","src/orchestrator/TaskRegistry.ts에 구현"]}
+{"type":"entity","name":"moonbot::Component::PerChannelQueue","entityType":"component","observations":["채널별 독립적인 FIFO 큐","채널 간 병렬 처리 가능하지만 동일 채널 내 순서 보장","처리 중 상태 추적 (startProcessing/stopProcessing)","최대 큐 크기 제한 (기본 100)","src/orchestrator/PerChannelQueue.ts에 구현"]}
+{"type":"entity","name":"moonbot::API::chat.send","entityType":"api","observations":["Gateway RPC 메서드","채널에서 메시지를 받아 TaskOrchestrator로 위임","ChatMessage 파라미터: {agentId, text, userId, channelId, metadata}","반환값: {status, taskId, state}","src/gateway/server.ts에 구현"]}
+{"type":"entity","name":"moonbot::API::chat.response","entityType":"api","observations":["Gateway notification 메서드","Task 실행 결과를 채널로 브로드캐스트","TaskResponse 포맷: {taskId?, channelId, text, status, metadata}","DiscordAdapter가 수신하여 Discord로 전송"]}
+{"type":"entity","name":"moonbot::Convention::TaskStateMachine","entityType":"convention","observations":["Task 상태: PENDING -> RUNNING -> (FAILED|DONE)","상태 전이 유효성 검사: PENDING->RUNNING, RUNNING->DONE/FAILED만 허용","task_id는 UUID + timestamp로 고유성 보장","channelSessionId를 기준으로 per-channel 큐에 등록"]}
+{"type":"entity","name":"moonbot::Convention::ErrorFormat","entityType":"convention","observations":["에러 포맷 분리: 사용자 메시지(userMessage) vs 내부 로그(internalMessage)","userMessage: 채널로 전송되는 사용자 친화적 메시지","internalMessage: 로그에만 남기는 상세 내용","코드 포맷: {code, userMessage, internalMessage?, stack?}"]}
+{"type":"entity","name":"moonbot::Component::GatewayServer","entityType":"component","observations":["WebSocket 기반 Gateway 서버","JSON-RPC 메시지 처리","ToolRuntime 통합","2026-01-29: TaskOrchestrator 통합 완료","생성자에서 TaskOrchestrator 초기화 및 onResponse callback 등록","chat.send 핸들러에서 Orchestrator.createTask로 위임","stop() 시 orchestrator.shutdown() 호출","getOrchestrator() 메서드 추가"]}
+{"type":"entity","name":"moonbot::Type::Task","entityType":"type","observations":["Task 인터페이스 정의 (src/types/index.ts)","필드: id, state, channelSessionId, message, createdAt, updatedAt, error?, result?","TaskState 타입: PENDING | RUNNING | FAILED | DONE","TaskError 타입: {code, userMessage, internalMessage?, stack?}","TaskEvent 타입: {taskId, previousState, newState, timestamp}"]}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Channels","relationType":"manages"}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Agents","relationType":"orchestrates"}
 {"type":"relation","from":"moonbot::Component::Agents","to":"moonbot::Component::Tools","relationType":"uses"}
@@ -37,3 +46,12 @@
 {"type":"relation","from":"moonbot::Component::DiscordBot","to":"moonbot::Component::Channels","relationType":"instantiates"}
 {"type":"relation","from":"moonbot::Component::Channels","to":"moonbot::Component::ChannelGatewayClient","relationType":"uses"}
 {"type":"relation","from":"moonbot::Component::ChannelGatewayClient","to":"moonbot::Component::Gateway","relationType":"connects"}
+{"type":"relation","from":"moonbot::Component::TaskOrchestrator","to":"moonbot::Component::TaskRegistry","relationType":"uses"}
+{"type":"relation","from":"moonbot::Component::TaskOrchestrator","to":"moonbot::Component::PerChannelQueue","relationType":"uses"}
+{"type":"relation","from":"moonbot::Component::TaskOrchestrator","to":"moonbot::API::chat.send","relationType":"receives_from"}
+{"type":"relation","from":"moonbot::Component::TaskOrchestrator","to":"moonbot::API::chat.response","relationType":"broadcasts_to"}
+{"type":"relation","from":"moonbot::Convention::TaskStateMachine","to":"moonbot::Component::TaskRegistry","relationType":"defines_behavior_of"}
+{"type":"relation","from":"moonbot::Convention::ErrorFormat","to":"moonbot::Component::TaskOrchestrator","relationType":"defines_behavior_of"}
+{"type":"relation","from":"moonbot::Component::GatewayServer","to":"moonbot::Component::TaskOrchestrator","relationType":"uses"}
+{"type":"relation","from":"moonbot::Component::GatewayServer","to":"moonbot::API::chat.send","relationType":"defines"}
+{"type":"relation","from":"moonbot::Component::GatewayServer","to":"moonbot::API::chat.response","relationType":"broadcasts"}
