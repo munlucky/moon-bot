@@ -30,6 +30,10 @@
 {"type":"entity","name":"moonbot::Convention::ErrorFormat","entityType":"convention","observations":["에러 포맷 분리: 사용자 메시지(userMessage) vs 내부 로그(internalMessage)","userMessage: 채널로 전송되는 사용자 친화적 메시지","internalMessage: 로그에만 남기는 상세 내용","코드 포맷: {code, userMessage, internalMessage?, stack?}"]}
 {"type":"entity","name":"moonbot::Component::GatewayServer","entityType":"component","observations":["WebSocket 기반 Gateway 서버","JSON-RPC 메시지 처리","ToolRuntime 통합","2026-01-29: TaskOrchestrator 통합 완료","생성자에서 TaskOrchestrator 초기화 및 onResponse callback 등록","chat.send 핸들러에서 Orchestrator.createTask로 위임","stop() 시 orchestrator.shutdown() 호출","getOrchestrator() 메서드 추가"]}
 {"type":"entity","name":"moonbot::Type::Task","entityType":"type","observations":["Task 인터페이스 정의 (src/types/index.ts)","필드: id, state, channelSessionId, message, createdAt, updatedAt, error?, result?","TaskState 타입: PENDING | RUNNING | FAILED | DONE","TaskError 타입: {code, userMessage, internalMessage?, stack?}","TaskEvent 타입: {taskId, previousState, newState, timestamp}"]}
+{"type":"entity","name":"moon-bot::Component::TaskOrchestrator","entityType":"component","observations":["태스크 라이프사이클 관리 및 채널별 큐 실행","Executor와 통합하여 실제 작업 실행","승인 이벤트 핸들링 (APPROVAL_REQUESTED/RESOLVED)","TaskStateChangeEvent 방출 (채널 ID 포함)","abortTask() 메서드로 태스크 중단 지원","Toolkit, SessionManager, Executor 의존성 주입","sessionTaskMap으로 세션-태스크 매핑"]}
+{"type":"entity","name":"moon-bot::Component::SessionKey","entityType":"component","observations":["Moltbot 호환 sessionKey 유틸리티","형식: agent:<id>:session:<key>","parse(), generate(), isValid() 함수 제공","src/sessions/SessionKey.ts에 구현"]}
+{"type":"entity","name":"moon-bot::Convention::TaskState","entityType":"convention","observations":["태스크 상태: PENDING -> RUNNING -> DONE/FAILED/PAUSED/ABORTED","PAUSED 상태는 승인 대기 중임을 나타냄","ABORTED 상태는 사용자 요청 또는 거부로 중단됨","TaskRegistry에서 상태 전이 규칙 검증"]}
+{"type":"entity","name":"moon-bot::Feature::TaskOrchestratorExecutorIntegration","entityType":"feature","observations":["P0: TaskState 확장, SessionKey, Executor 통합, 의존성 주입 완료","P1: 승인 이벤트 핸들러, 상태 이벤트 방출, abortTask() 구현 완료","TypeScript 컴파일 검증 통과","커밋 aea5ab4: 7개 파일, 507줄 추가"]}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Channels","relationType":"manages"}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Agents","relationType":"orchestrates"}
 {"type":"relation","from":"moonbot::Component::Agents","to":"moonbot::Component::Tools","relationType":"uses"}
@@ -55,3 +59,8 @@
 {"type":"relation","from":"moonbot::Component::GatewayServer","to":"moonbot::Component::TaskOrchestrator","relationType":"uses"}
 {"type":"relation","from":"moonbot::Component::GatewayServer","to":"moonbot::API::chat.send","relationType":"defines"}
 {"type":"relation","from":"moonbot::Component::GatewayServer","to":"moonbot::API::chat.response","relationType":"broadcasts"}
+{"type":"relation","from":"moon-bot::Component::TaskOrchestrator","to":"moon-bot::Component::SessionKey","relationType":"uses"}
+{"type":"relation","from":"moon-bot::Component::TaskOrchestrator","to":"moon-bot::Convention::TaskState","relationType":"implements"}
+{"type":"relation","from":"moon-bot::Feature::TaskOrchestratorExecutorIntegration","to":"moon-bot::Component::TaskOrchestrator","relationType":"updates"}
+{"type":"relation","from":"moon-bot::Component::TaskOrchestrator","to":"moonbot::Component::TaskRegistry","relationType":"extends"}
+{"type":"relation","from":"moon-bot::Component::TaskOrchestrator","to":"moonbot::Component::PerChannelQueue","relationType":"extends"}

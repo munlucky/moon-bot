@@ -4,10 +4,12 @@ argument-hint: [context]
 allowed-tools: Bash(git status:*), Bash(git add:*), Bash(git diff:*), Bash(git commit:*), Bash(git log:*), Bash(jq:*), Bash(basename:*), mcp__memory__create_entities, mcp__memory__add_observations, mcp__memory__create_relations, mcp__memory__search_nodes, mcp__memory__open_nodes
 ---
 
-# 커밋 및 프로젝트 메모리 현행화
+# 프로젝트 메모리 현행화 및 커밋
 
 ## 개요
 이 명령어는 메인 세션에서 실행되며, 변경사항을 분석하고 전역 Memory MCP에 프로젝트 메모리(`[ProjectID]::*`)를 현행화합니다.
+
+> **⚠️ 중요: 반드시 Memory 현행화(1~7단계)를 먼저 완료한 후 커밋(8단계)을 수행하세요.**
 
 ## 1. 변경사항 분석
 ```bash
@@ -115,9 +117,11 @@ create_relations([{
 ## 8. 커밋 생성
 
 ```bash
-git add [files]
+git add [files] .claude/memory.json
 git commit -m "[간결한 한글 커밋 메시지]"
 ```
+
+> **📌 중요: `.claude/memory.json` 파일을 반드시 커밋에 포함시키세요.** Memory MCP의 현행화 내용이 저장된 파일입니다.
 
 **커밋 메시지 규칙:**
 - 이모지, 특수문자 제외
