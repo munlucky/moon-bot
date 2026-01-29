@@ -89,12 +89,8 @@ export class Executor {
         completedSteps.add(step.id);
         outputs.set(step.id, stepResult.result);
 
-        messages.push({
-          type: "result",
-          content: `Step "${step.description}" completed`,
-          timestamp: Date.now(),
-          metadata: { stepId: step.id, result: stepResult.result },
-        });
+        // Don't send step completion messages to avoid spam
+        // Only send final result
 
         // Mark step success in replanner
         this.replanner.markStepSuccess(step.id);
