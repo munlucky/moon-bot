@@ -176,11 +176,50 @@ export interface ClientInfo {
   connectedAt: number;
 }
 
+/**
+ * Service layer identifiers for structured logging.
+ * Used to track request flow across layers.
+ */
+export type ServiceLayer =
+  | "gateway"
+  | "orchestrator"
+  | "executor"
+  | "planner"
+  | "replanner"
+  | "tools"
+  | "llm"
+  | "session"
+  | "channel"
+  | "config"
+  | "cron"
+  | "approval";
+
 export interface LogEntry {
   level: "debug" | "info" | "warn" | "error";
   message: string;
   timestamp: number;
   context?: Record<string, unknown>;
+  /** Service layer that generated this log */
+  layer?: ServiceLayer;
+  /** Trace ID for request correlation across layers */
+  traceId?: string;
+  /** Span ID for individual operation within a trace */
+  spanId?: string;
+  /** Parent span ID for nested operations */
+  parentSpanId?: string;
+  /** Duration in milliseconds (for operation completion logs) */
+  durationMs?: number;
+}
+
+/**
+ * Context for tracing requests across service layers.
+ */
+export interface TraceContext {
+  traceId: string;
+  spanId: string;
+  parentSpanId?: string;
+  layer: ServiceLayer;
+  startTime: number;
 }
 
 export interface Step {

@@ -1,6 +1,6 @@
 // Executor: Executes steps using tools with Replanner integration
 
-import { createLogger, type Logger } from "../utils/logger.js";
+import { createLogger, type Logger, type LayerLogger, runWithTraceAsync, getTraceContext } from "../utils/logger.js";
 import type { SystemConfig, ToolContext, SessionMessage, ToolResult, ToolSpec } from "../types/index.js";
 import { Planner, type Step } from "./planner.js";
 import { Replanner, type ToolFailure, type ExecutionContext } from "./replanner.js";
@@ -22,6 +22,8 @@ export interface ExecutionResult {
 export class Executor {
   private config: SystemConfig;
   private logger: Logger;
+  private layerLogger: LayerLogger;
+  private toolLogger: LayerLogger;
   private planner: Planner;
   private toolkit: Toolkit;
   private replanner: Replanner;
@@ -30,6 +32,8 @@ export class Executor {
   constructor(config: SystemConfig, toolkit: Toolkit) {
     this.config = config;
     this.logger = createLogger(config);
+    this.layerLogger = this.logger.forLayer("executor");
+    this.toolLogger = this.logger.forLayer("tools");
     this.toolkit = toolkit;
 
     // Get tool runtime if available
@@ -52,7 +56,15 @@ export class Executor {
     agentId: string,
     userId: string
   ): Promise<ExecutionResult> {
-    this.logger.info("Executing task", { message, sessionId });
+    const startTime = Date.now();
+    const traceCtx = getTraceContext();
+
+    this.layerLogger.logInput("execute", {
+      message,
+      sessionId,
+      agentId,
+      traceId: traceCtx?.traceId,
+    });
 
     // Reset replanner state for new execution
     this.replanner.reset();
@@ -62,8 +74,10 @@ export class Executor {
     const errors = new Map<string, Error>();
     const completedSteps = new Set<string>();
 
-    // Generate plan
-    const plan = await this.planner.plan(message);
+    // Generate plan via planner layer
+    const plan = await runWithTraceAsync("planner", async () => {
+      return this.planner.plan(message);
+    });
 
     // Add thought message
     messages.push({
@@ -71,8 +85,6 @@ export class Executor {
       content: `Plan: ${plan.steps.map((s) => s.description).join(", ")}`,
       timestamp: Date.now(),
     });
-
-    const startTime = Date.now();
 
     // Execute steps sequentially with recovery
     for (const step of plan.steps) {
@@ -115,11 +127,12 @@ export class Executor {
     const success = errors.size === 0;
     const recoveryStats = this.replanner.getStats();
 
-    this.logger.info("Execution completed", {
+    this.layerLogger.logOutput("execute", {
       success,
-      duration: Date.now() - startTime,
+      stepsCompleted: completedSteps.size,
+      errorsCount: errors.size,
       recoveryStats,
-    });
+    }, startTime);
 
     return { success, outputs, errors, messages, recoveryStats };
   }
@@ -257,7 +270,7 @@ export class Executor {
     userId: string
   ): Promise<SessionMessage | null> {
     if (!step.toolId) {
-      this.logger.debug("Non-tool step (no toolId specified)", {
+      this.layerLogger.debug("Non-tool step (no toolId specified)", {
         stepId: step.id,
         description: step.description,
       });
@@ -271,7 +284,7 @@ export class Executor {
 
     // Use ToolRuntime if available (supports approval flow)
     if (this.toolRuntime) {
-      this.logger.debug(`Executing tool via ToolRuntime: ${step.toolId}`);
+      this.toolLogger.logInput(`tool:${step.toolId}`, { stepId: step.id, input: step.input });
 
       const invokeResult = await this.toolRuntime.invoke(
         step.toolId,

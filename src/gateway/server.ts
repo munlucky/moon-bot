@@ -4,7 +4,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID, timingSafeEqual, createHash } from "crypto";
 import type { SystemConfig, ClientInfo, ConnectParams, ChatMessage, TaskResponse } from "../types/index.js";
 import { JsonRpcServer } from "./json-rpc.js";
-import { createLogger, type Logger } from "../utils/logger.js";
+import { createLogger, type Logger, type LayerLogger, runWithTraceAsync } from "../utils/logger.js";
 import { ErrorSanitizer } from "../utils/error-sanitizer.js";
 import { ToolRuntime } from "../tools/runtime/ToolRuntime.js";
 import { createToolHandlers } from "./handlers/tools.handler.js";
@@ -124,6 +124,7 @@ export class GatewayServer {
   private sockets = new Map<string, WebSocket>();
   private config: SystemConfig;
   private logger: Logger;
+  private layerLogger: LayerLogger;
   private rateLimiter: ConnectionRateLimiter;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private toolRuntime: ToolRuntime | null = null;
@@ -135,6 +136,7 @@ export class GatewayServer {
   constructor(config: SystemConfig, workspaceRoot?: string) {
     this.config = config;
     this.logger = createLogger(config);
+    this.layerLogger = this.logger.forLayer("gateway");
     this.rpc = new JsonRpcServer();
     this.rateLimiter = new ConnectionRateLimiter(
       60000, // 1 minute window
@@ -304,7 +306,7 @@ export class GatewayServer {
       };
 
       this.clients.set(clientId, clientInfo);
-      this.logger.info(`Client connected: ${clientType} (${clientId})`);
+      this.layerLogger.info(`Client connected: ${clientType}`, { clientId, clientType, version });
 
       return { clientId, ...clientInfo };
     });
@@ -312,18 +314,25 @@ export class GatewayServer {
     // chat.send: Send message from surface to agent (delegated to Orchestrator)
     this.rpc.register("chat.send", async (params) => {
       const message = params as ChatMessage;
-      this.logger.info(`Chat message from ${message.channelId}: ${message.text}`);
 
-      // Generate channel session ID for per-channel queue mapping
-      const channelSessionId = message.channelId;
+      // Start trace context for this request flow
+      return runWithTraceAsync("gateway", async () => {
+        const startTime = Date.now();
+        this.layerLogger.logInput("chat.send", { channelId: message.channelId, text: message.text });
 
-      // Delegate to TaskOrchestrator
-      const { taskId, state } = this.orchestrator.createTask({
-        message,
-        channelSessionId,
+        // Generate channel session ID for per-channel queue mapping
+        const channelSessionId = message.channelId;
+
+        // Delegate to TaskOrchestrator
+        const { taskId, state } = this.orchestrator.createTask({
+          message,
+          channelSessionId,
+        });
+
+        const result = { status: "queued", taskId, state };
+        this.layerLogger.logOutput("chat.send", result, startTime);
+        return result;
       });
-
-      return { status: "queued", taskId, state };
     });
 
     // session.get: Get session by ID
