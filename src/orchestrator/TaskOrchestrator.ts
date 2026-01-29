@@ -9,7 +9,7 @@ import type { Task, TaskResponse, TaskState, ChatMessage } from "../types/index.
 import type { CreateTaskParams, OrchestratorConfig, TaskResult, ApprovalRequestEvent, ApprovalResolvedEvent } from "./types.js";
 import { TaskRegistry } from "./TaskRegistry.js";
 import { PerChannelQueue } from "./PerChannelQueue.js";
-import { createLogger, type Logger } from "../utils/logger.js";
+import { createLogger, type Logger, type LayerLogger, runWithTraceAsync, getTraceContext } from "../utils/logger.js";
 import type { SystemConfig } from "../types/index.js";
 import type { Executor } from "../agents/executor.js";
 import type { Toolkit } from "../tools/index.js";
@@ -56,6 +56,7 @@ export class TaskOrchestrator {
   private queue: PerChannelQueue<string>; // Queue stores task IDs
   private config: OrchestratorConfig;
   private logger: Logger;
+  private layerLogger: LayerLogger;
   private responseCallbacks: Set<ResponseCallback> = new Set();
   private stateChangeCallbacks: Set<StateChangeCallback> = new Set();
   private approvalCallbacks: Set<ApprovalCallback> = new Set();
@@ -85,6 +86,7 @@ export class TaskOrchestrator {
     this.registry = new TaskRegistry();
     this.queue = new PerChannelQueue(this.config.maxQueueSizePerChannel);
     this.logger = createLogger(systemConfig);
+    this.layerLogger = this.logger.forLayer("orchestrator");
     this.executor = deps?.executor ?? null;
     this.toolkit = deps?.toolkit ?? null;
     this.sessionManager = deps?.sessionManager ?? null;
@@ -374,6 +376,15 @@ export class TaskOrchestrator {
    * Called by Gateway via RPC when receiving a chat.send request.
    */
   createTask(params: CreateTaskParams): { taskId: string; state: TaskState } {
+    const startTime = Date.now();
+    const traceCtx = getTraceContext();
+
+    this.layerLogger.logInput("createTask", {
+      channelSessionId: params.channelSessionId,
+      messageText: params.message.text,
+      traceId: traceCtx?.traceId,
+    });
+
     const task = this.registry.create(params.message, params.channelSessionId);
     const enqueued = this.queue.enqueue(params.channelSessionId, task.id);
 
@@ -383,21 +394,17 @@ export class TaskOrchestrator {
         userMessage: "대기열이 가득 찼습니다. 잠시 후 다시 시도해주세요.",
         internalMessage: `Channel ${params.channelSessionId} queue is full`,
       });
+      this.layerLogger.logError("createTask", new Error("Queue full"), startTime);
       throw new Error("Queue full for channel: " + params.channelSessionId);
     }
-
-    this.logger.info("Task created", {
-      taskId: task.id,
-      channelSessionId: params.channelSessionId,
-    });
 
     // Try to process this channel's queue
     this.processChannel(params.channelSessionId);
 
-    return {
-      taskId: task.id,
-      state: task.state,
-    };
+    const result = { taskId: task.id, state: task.state };
+    this.layerLogger.logOutput("createTask", result, startTime);
+
+    return result;
   }
 
   /**
@@ -496,6 +503,9 @@ export class TaskOrchestrator {
       return;
     }
 
+    const startTime = Date.now();
+    this.layerLogger.logInput("executeTask", { taskId, channelSessionId });
+
     // Update state to RUNNING
     this.registry.updateState(taskId, "RUNNING");
 
@@ -511,8 +521,10 @@ export class TaskOrchestrator {
     this.processingTimers.set(taskId, timeoutTimer);
 
     try {
-      // Execute the task (placeholder - calls existing Echo/Agent logic)
-      const result = await this.executeTaskLogic(task);
+      // Execute the task via executor layer
+      const result = await runWithTraceAsync("executor", async () => {
+        return this.executeTaskLogic(task);
+      });
 
       // Track session to task mapping for approval handling
       if (result.sessionId) {
@@ -535,10 +547,12 @@ export class TaskOrchestrator {
         metadata: { state: "DONE" },
       });
 
-      this.logger.info("Task completed", { taskId });
+      this.layerLogger.logOutput("executeTask", { taskId, success: true }, startTime);
     } catch (error) {
       clearTimeout(timeoutTimer);
       this.processingTimers.delete(taskId);
+
+      this.layerLogger.logError("executeTask", error, startTime);
 
       this.handleTaskError(taskId, {
         code: "EXECUTION_ERROR",
