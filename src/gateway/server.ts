@@ -10,6 +10,7 @@ import { ToolRuntime } from "../tools/runtime/ToolRuntime.js";
 import { createToolHandlers } from "./handlers/tools.handler.js";
 import { createChannelHandlers } from "./handlers/channel.handler.js";
 import { saveConfig } from "../config/manager.js";
+import { DiscordAdapter } from "../channels/discord.js";
 
 /**
  * Rate limiter to prevent connection flooding.

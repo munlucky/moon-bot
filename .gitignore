@@ -6,6 +6,10 @@ dist/
 .env.local
 *.tsbuildinfo
 
+# Local config files (contains tokens)
+*-config.json
+config.json
+
 .history
 #클로드 작업 관련 파일
 .claude/docs/tasks/*/context.md

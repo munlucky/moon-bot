@@ -46,6 +46,13 @@ import {
   channelDisable,
 } from "./commands/channel.js";
 
+// Config commands
+import {
+  configImport,
+  configExport,
+  configPath,
+} from "./commands/config.js";
+
 /** Helper to get CLI options from a command */
 function getCliOptions(command: Command): CliOptions {
   const opts = command.opts();
@@ -234,6 +241,34 @@ export function createCli(): Command {
     .action(async (id) => {
       const options = getCliOptions(channelCmd);
       await channelDisable(id, options);
+    });
+
+  // Config commands
+  const configCmd = program.command("config")
+    .description("Configuration management");
+
+  configCmd.command("import")
+    .description("Import config from JSON file")
+    .argument("<file>", "JSON config file to import")
+    .option("-f, --force", "Overwrite existing config")
+    .action(async (file, options) => {
+      const cliOptions = getCliOptions(configCmd);
+      await configImport(file, { ...cliOptions, ...options });
+    });
+
+  configCmd.command("export")
+    .description("Export current config to JSON file")
+    .argument("<file>", "Output JSON file path")
+    .action(async (file, options) => {
+      const cliOptions = getCliOptions(configCmd);
+      await configExport(file, cliOptions);
+    });
+
+  configCmd.command("path")
+    .description("Show config file path")
+    .action(async () => {
+      const options = getCliOptions(configCmd);
+      await configPath(options);
     });
 
   return program;

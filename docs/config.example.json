@@ -1,0 +1,38 @@
+{
+  "gateways": [
+    {
+      "port": 18789,
+      "host": "127.0.0.1"
+    }
+  ],
+  "agents": [
+    {
+      "id": "default",
+      "name": "Default Agent",
+      "model": "gpt-4o",
+      "temperature": 0.7,
+      "maxTokens": 4096
+    }
+  ],
+  "channels": [
+    {
+      "id": "my-discord",
+      "type": "discord",
+      "name": "My Discord Bot",
+      "token": "YOUR_DISCORD_BOT_TOKEN_HERE",
+      "enabled": true
+    },
+    {
+      "id": "work-slack",
+      "type": "slack",
+      "name": "Work Slack",
+      "token": "xoxb-YOUR_SLACK_TOKEN_HERE",
+      "enabled": false
+    }
+  ],
+  "tools": [],
+  "storage": {
+    "sessionsPath": "~/.moonbot/sessions",
+    "logsPath": "~/.moonbot/logs"
+  }
+}

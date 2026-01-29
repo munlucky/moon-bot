@@ -54,9 +54,22 @@ pnpm install
 
 # 빌드
 pnpm build
+```
 
-# CLI 전역 설치 (선택)
+### CLI 실행 방법
+
+빌드 후 다음 방법으로 CLI를 실행할 수 있습니다:
+
+```bash
+# 방법 1: pnpm exec (권장)
+pnpm exec moonbot <command>
+
+# 방법 2: 전역 설치 후
 pnpm link
+moonbot <command>
+
+# 방법 3: 직접 실행
+node dist/cli.js <command>
 ```
 
 ---
@@ -112,12 +125,68 @@ moonbot <command> [options]
 | 명령어 | 설명 |
 |--------|------|
 | `gateway` | Gateway 제어 |
+| `config` | 설정 관리 (import/export) |
 | `channel` | 채널 관리 |
 | `logs` | 로그 조회 |
 | `doctor` | 진단 정보 |
 | `call` | 직접 RPC 호출 |
 | `pairing` | 페어링 관리 |
 | `approvals` | 승인 관리 |
+
+---
+
+## 빠른 설정 (Config Import)
+
+JSON 파일로 한 번에 모든 채널을 설정할 수 있습니다.
+
+### 1. 설정 파일 작성
+
+```bash
+# 예시 파일 복사
+cp docs/config.example.json my-config.json
+```
+
+`my-config.json`을 편집하여 토큰을 입력하세요:
+
+```json
+{
+  "gateways": [{"port": 18789, "host": "127.0.0.1"}],
+  "channels": [
+    {
+      "id": "my-discord",
+      "type": "discord",
+      "name": "My Discord Bot",
+      "token": "발급받은_Discord_토큰",
+      "enabled": true
+    }
+  ]
+}
+```
+
+### 2. 설정 가져오기
+
+```bash
+pnpm exec moonbot config import my-config.json
+```
+
+### 3. 확인
+
+```bash
+pnpm exec moonbot channel list
+pnpm exec moonbot gateway start
+```
+
+### Config 명령어
+
+| 명령어 | 설명 |
+|--------|------|
+| `config import <file>` | JSON 파일에서 설정 가져오기 |
+| `config export <file>` | 현재 설정을 JSON 파일로 내보내기 |
+| `config path` | 설정 파일 위치 표시 |
+
+**옵션**:
+- `--force`: 기존 설정 덮어쓰기
+- `--json`: JSON 형식 출력
 
 ---
 
@@ -209,6 +278,70 @@ moonbot channel disable work-slack
 보안을 위해 모든 토큰은 자동으로 마스킹됩니다:
 - 형식: `앞 6자리...뒤 4자리`
 - 예시: `MTIzNDU2Nzg5...Njc4OQ==`
+
+---
+
+## 채널별 설정
+
+### Discord
+
+Discord 봇을 생성하고 토큰을 발급받는 방법입니다.
+
+#### 1. Discord 애플리케이션 생성
+
+1. [Discord Developer Portal](https://discord.com/developers/applications) 접속
+2. **New Application** 클릭
+3. 애플리케이션 이름 입력 (예: `Moonbot`)
+4. **Create** 클릭
+
+#### 2. 봇 생성
+
+1. 왼쪽 메뉴에서 **Bot** 클릭
+2. **Reset Token** 또는 **Add Bot** 클릭
+3. **Yes, do it!** 확인
+4. **Reset Token** 클릭하여 토큰 생성
+5. 토큰을 복사 (※ 이 토큰은 다시 볼 수 없으므로 반드시 저장)
+
+#### 3. 봇 권한 설정
+
+1. **Privileged Gateway Intents** 섹션에서 다음 활성화:
+   - ✅ **MESSAGE CONTENT INTENT** (필수)
+   - ✅ **SERVER MEMBERS INTENT** (선택)
+   - ✅ **PRESENCE INTENT** (선택)
+
+#### 4. 봇 초대
+
+1. **OAuth2** → **URL Generator** 클릭
+2. **Scopes**에서 `bot` 선택
+3. **Bot Permissions**에서 필요한 권한 선택:
+   - ✅ Send Messages
+   - ✅ Embed Links
+   - ✅ Attach Files
+   - ✅ Read Message History
+   - ✅ Add Reactions
+4. 생성된 URL로 접속하여 봇을 서버에 초대
+
+#### 5. Moonbot에 Discord 채널 등록
+
+```bash
+moonbot channel add my-discord \
+  --type discord \
+  --token "여기에_복사한_토큰_입력" \
+  --name "My Discord Bot" \
+  --enable
+```
+
+---
+
+### Slack (곧 지원 예정)
+
+Slack 앱 생성 및 토큰 발급 가이드는 Slack 채널 어댑터 구현 시 추가될 예정입니다.
+
+---
+
+### Telegram (곧 지원 예정)
+
+Telegram Bot 생성 및 토큰 발급 가이드는 Telegram 채널 어댑터 구현 시 추가될 예정입니다.
 
 ---
 

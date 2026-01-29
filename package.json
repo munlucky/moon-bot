@@ -12,9 +12,11 @@
     "dev": "tsc --watch",
     "gateway": "node dist/gateway/index.js",
     "gateway:watch": "bun run src/gateway/index.ts",
+    "discord": "node dist/discord-bot.js",
     "test": "bun test",
     "lint": "eslint src --ext .ts",
-    "format": "prettier --write \"src/**/*.ts\""
+    "format": "prettier --write \"src/**/*.ts\"",
+    "cli": "node dist/cli.js"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.33.0",
