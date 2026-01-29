@@ -5,6 +5,27 @@
 import type { ChatMessage, TaskResponse, TaskState, Task, TaskError, TaskEvent } from "../types/index.js";
 
 /**
+ * Approval request event data.
+ */
+export interface ApprovalRequestEvent {
+  taskId: string;
+  channelId: string;
+  toolId: string;
+  input: unknown;
+  requestId: string;
+}
+
+/**
+ * Approval resolved event data.
+ */
+export interface ApprovalResolvedEvent {
+  taskId: string;
+  channelId: string;
+  approved: boolean;
+  requestId: string;
+}
+
+/**
  * Parameters for creating a new task.
  */
 export interface CreateTaskParams {

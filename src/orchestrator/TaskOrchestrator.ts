@@ -6,7 +6,7 @@
  */
 
 import type { Task, TaskResponse, TaskState, ChatMessage } from "../types/index.js";
-import type { CreateTaskParams, OrchestratorConfig, TaskResult } from "./types.js";
+import type { CreateTaskParams, OrchestratorConfig, TaskResult, ApprovalRequestEvent, ApprovalResolvedEvent } from "./types.js";
 import { TaskRegistry } from "./TaskRegistry.js";
 import { PerChannelQueue } from "./PerChannelQueue.js";
 import { createLogger, type Logger } from "../utils/logger.js";
@@ -24,6 +24,9 @@ const DEFAULT_CONFIG: OrchestratorConfig = {
 };
 
 type ResponseCallback = (response: TaskResponse) => void;
+
+type ApprovalCallback = (event: ApprovalRequestEvent) => void;
+type ApprovalResolvedCallback = (event: ApprovalResolvedEvent) => void;
 
 /**
  * Task state change event with channel information.
@@ -55,6 +58,8 @@ export class TaskOrchestrator {
   private logger: Logger;
   private responseCallbacks: Set<ResponseCallback> = new Set();
   private stateChangeCallbacks: Set<StateChangeCallback> = new Set();
+  private approvalCallbacks: Set<ApprovalCallback> = new Set();
+  private approvalResolvedCallbacks: Set<ApprovalResolvedCallback> = new Set();
   private processingTimers: Map<string, NodeJS.Timeout> = new Map();
   private systemConfig: SystemConfig;
   private executor: Executor | null = null;
@@ -124,6 +129,48 @@ export class TaskOrchestrator {
   }
 
   /**
+   * Register a callback for approval requests.
+   */
+  onApprovalRequest(callback: ApprovalCallback): () => void {
+    this.approvalCallbacks.add(callback);
+    return () => this.approvalCallbacks.delete(callback);
+  }
+
+  /**
+   * Register a callback for approval resolved events.
+   */
+  onApprovalResolved(callback: ApprovalResolvedCallback): () => void {
+    this.approvalResolvedCallbacks.add(callback);
+    return () => this.approvalResolvedCallbacks.delete(callback);
+  }
+
+  /**
+   * Emit approval request event to all registered callbacks.
+   */
+  private emitApprovalRequest(event: ApprovalRequestEvent): void {
+    for (const callback of this.approvalCallbacks) {
+      try {
+        callback(event);
+      } catch (error) {
+        this.logger.error("Approval callback error", { error });
+      }
+    }
+  }
+
+  /**
+   * Emit approval resolved event to all registered callbacks.
+   */
+  private emitApprovalResolved(event: ApprovalResolvedEvent): void {
+    for (const callback of this.approvalResolvedCallbacks) {
+      try {
+        callback(event);
+      } catch (error) {
+        this.logger.error("Approval resolved callback error", { error });
+      }
+    }
+  }
+
+  /**
    * Emit state change event to all registered callbacks.
    */
   private emitStateChange(event: TaskStateChangeEvent): void {
@@ -164,7 +211,7 @@ export class TaskOrchestrator {
           requestedAt: Date.now(),
         });
 
-        // Notify about approval request
+        // Notify about approval request via response callback
         this.sendResponse({
           taskId: task.id,
           channelId: task.message.channelId,
@@ -175,6 +222,15 @@ export class TaskOrchestrator {
             approvalRequestId: requestId,
             toolId,
           },
+        });
+
+        // Emit approval request event for Gateway to broadcast
+        this.emitApprovalRequest({
+          taskId: task.id,
+          channelId: task.message.channelId,
+          toolId,
+          input,
+          requestId,
         });
       }
     });
@@ -202,6 +258,14 @@ export class TaskOrchestrator {
 
         // Resume processing
         this.processChannel(task.channelSessionId);
+
+        // Emit approval resolved event
+        this.emitApprovalResolved({
+          taskId: task.id,
+          channelId: task.message.channelId,
+          approved: true,
+          requestId,
+        });
       } else {
         // Approval denied: abort task
         this.registry.updateState(task.id, "ABORTED", undefined, {
@@ -225,6 +289,14 @@ export class TaskOrchestrator {
 
         // Process next task
         this.processChannel(task.channelSessionId);
+
+        // Emit approval resolved event
+        this.emitApprovalResolved({
+          taskId: task.id,
+          channelId: task.message.channelId,
+          approved: false,
+          requestId,
+        });
       }
     });
   }
@@ -329,6 +401,63 @@ export class TaskOrchestrator {
    */
   getTask(taskId: string): Task | undefined {
     return this.registry.get(taskId);
+  }
+
+  /**
+   * Grant or deny approval for a paused task.
+   * Called when user responds to an approval request.
+   */
+  grantApproval(taskId: string, approved: boolean): boolean {
+    const task = this.registry.get(taskId);
+    if (!task) {
+      return false;
+    }
+
+    // Only PAUSED tasks can be approved/denied
+    if (task.state !== "PAUSED") {
+      this.logger.warn("Cannot approve task not in PAUSED state", { taskId, state: task.state });
+      return false;
+    }
+
+    // Find the approval request for this task
+    let approvalRequestId: string | undefined;
+    for (const [requestId, pending] of this.pendingApprovals.entries()) {
+      if (pending.taskId === taskId) {
+        approvalRequestId = requestId;
+        break;
+      }
+    }
+
+    if (!approvalRequestId) {
+      this.logger.warn("No pending approval found for task", { taskId });
+      return false;
+    }
+
+    // Emit approval resolved event (triggers setupApprovalHandlers logic)
+    this.toolRuntime?.emit("approvalResolved", {
+      requestId: approvalRequestId,
+      approved,
+    });
+
+    this.logger.info("Approval processed", { taskId, approved });
+    return true;
+  }
+
+  /**
+   * Get pending approval requests.
+   */
+  getPendingApprovals(): Array<{
+    taskId: string;
+    channelId: string;
+    toolId: string;
+    requestedAt: number;
+  }> {
+    return Array.from(this.pendingApprovals.values()).map((p) => ({
+      taskId: p.taskId,
+      channelId: p.channelId,
+      toolId: p.toolId,
+      requestedAt: p.requestedAt,
+    }));
   }
 
   /**

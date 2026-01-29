@@ -162,6 +162,27 @@ export class GatewayServer {
         this.broadcast("chat.response", response);
       });
 
+      // Register orchestrator approval request callback
+      this.orchestrator.onApprovalRequest((event) => {
+        this.broadcast("approval.requested", {
+          taskId: event.taskId,
+          channelId: event.channelId,
+          toolId: event.toolId,
+          input: event.input,
+          requestId: event.requestId,
+        });
+      });
+
+      // Register orchestrator approval resolved callback
+      this.orchestrator.onApprovalResolved((event) => {
+        this.broadcast("approval.resolved", {
+          taskId: event.taskId,
+          channelId: event.channelId,
+          approved: event.approved,
+          requestId: event.requestId,
+        });
+      });
+
       this.setupHandlers();
     }).catch((error) => {
       this.logger.error("Failed to initialize dependencies", { error });
@@ -326,6 +347,28 @@ export class GatewayServer {
       this.sockets.delete(clientId);
       this.logger.info(`Client disconnected: ${clientId}`);
       return { success: true };
+    });
+
+    // approval.grant: Grant or deny approval for a paused task
+    this.rpc.register("approval.grant", async (params) => {
+      const { taskId, approved } = params as { taskId: string; approved: boolean };
+      this.logger.info("Approval request", { taskId, approved });
+
+      const success = this.orchestrator.grantApproval(taskId, approved);
+      if (!success) {
+        throw new Error("Failed to process approval - task not found or not in PAUSED state");
+      }
+
+      return { success: true, taskId, approved };
+    });
+
+    // approval.list: Get pending approval requests
+    this.rpc.register("approval.list", async () => {
+      const pending = this.orchestrator.getPendingApprovals();
+      return {
+        pending,
+        count: pending.length,
+      };
     });
   }
 
