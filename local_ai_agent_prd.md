@@ -176,7 +176,7 @@
 | `moonbot pairing approve <code>` | `src/cli/commands/pairing.ts` | 사용자 승인 |
 | `moonbot channel add/remove/list/enable/disable` | `src/cli/commands/channel.ts` | 채널 관리 |
 | `moonbot config import/export/path` | `src/cli/commands/config.ts` | 설정 관리 |
-| `moonbot approvals list/grant/deny` | `src/cli/commands/approvals.ts` | 승인 관리 |
+| `moonbot approvals list/approve/deny` | `src/cli/commands/approvals.ts` | 승인 관리 |
 
 ### 7.2 개발 환경
 - Node.js 22+, TypeScript(ESM)

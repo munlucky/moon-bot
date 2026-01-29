@@ -133,7 +133,7 @@ pnpm gateway:watch  # Gateway with Bun (hot reload)
 moonbot gateway status|start|stop|restart
 moonbot channel list|add|remove|enable|disable
 moonbot config import|export|path
-moonbot approvals list|grant|deny
+moonbot approvals list|approve|deny
 moonbot logs --follow
 moonbot doctor
 moonbot call <rpc> [params]

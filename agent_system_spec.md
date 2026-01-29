@@ -445,8 +445,8 @@ Discord/Slack ← Gateway (chat.response) ← TaskResponse
 | `moonbot config export <file>` | 〃 | 설정 내보내기 |
 | `moonbot config path` | 〃 | 설정 파일 경로 |
 | `moonbot approvals list` | `src/cli/commands/approvals.ts` | 대기 중 승인 |
-| `moonbot approvals grant <taskId>` | 〃 | 승인 |
-| `moonbot approvals deny <taskId>` | 〃 | 거부 |
+| `moonbot approvals approve <id>` | 〃 | 승인 |
+| `moonbot approvals deny <id>` | 〃 | 거부 |
 
 ### 9.2 개발 환경
 
