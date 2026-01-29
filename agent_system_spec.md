@@ -1,6 +1,6 @@
 # Local-first AI Agent System - Technical Specification
 
-> **문서 버전**: 2.0 (2026-01-29 현행화)
+> **문서 버전**: 2.1 (2026-01-29 현행화)
 > **PRD 문서**: `local_ai_agent_prd.md`
 
 이 문서는 'Moltbot 프레임워크 기반 로컬 우선 AI 에이전트 시스템 PRD'를 기반으로 실제 기능 구현을 위한 기술 사양(Specification)을 정의합니다.
@@ -20,7 +20,7 @@
     discord.ts        # Discord 어댑터 ✅
     GatewayClient.ts  # 채널용 WebSocket 클라이언트 ✅
   /agents
-    planner.ts        # 목표 분해 (🔶 LLM 연동 미구현)
+    planner.ts        # 목표 분해 (✅ LLM 연동 완료)
     executor.ts       # 도구 실행 ✅
     /replanner        # 실패 복구 모듈 ✅
   /orchestrator       # Task Orchestrator ✅
@@ -35,13 +35,21 @@
     /approval         # 승인 시스템
     /runtime          # ToolRuntime, ApprovalManager
   /sessions           # 세션 저장/로드/전달 ✅
-  /cron               # 예약 작업 관리 (🔶 Agent 연동 미구현)
+  /cron               # 예약 작업 관리 (✅ Agent 연동 완료)
   /auth               # 페어링 승인, 인증 모듈 ✅
   /config             # 시스템 설정 로딩/검증 ✅
   /cli                # CLI 명령어 ✅
     /commands         # gateway, channel, config, logs, doctor, call, pairing, approvals
   /types              # 타입 정의
   /utils              # 유틸리티 (logger, error-sanitizer)
+  /llm                # LLM 인프라 (✅ 새로 추가)
+    LLMClient.ts      # Planner용 LLM 클라이언트
+    LLMProviderFactory.ts  # 프로바이더 팩토리
+    /providers        # LLM 프로바이더 구현
+      BaseLLMProvider.ts
+      OpenAIProvider.ts
+      GLMProvider.ts   # Z.AI(智谱AI) 프로바이더
+    types.ts          # LLM 타입 정의
 ```
 
 ---
@@ -129,13 +137,73 @@ interface ChannelGatewayClient {
 
 ---
 
-## 4. Agent 사고 구조
+## 4. LLM 인프라
 
-### 4.1 Planner/Executor/Replanner
+### 4.1 LLMClient
+
+**파일**: `src/llm/LLMClient.ts`
+
+```typescript
+class LLMClient {
+  constructor(config: LLMConfig)
+  isAvailable(): boolean
+  generatePlan(request: LLMPlanRequest): Promise<LLMPlanResponse>
+  generateFallbackPlan(message: string): LLMPlanResponse
+}
+```
+
+**기능:**
+- Planner를 위한 LLM 기반 계획 생성
+- LLM unavailable 시 키워드 기반 fallback
+- 프로바이더 자동 감지 (OpenAI/GLM)
+
+### 4.2 LLMProviderFactory
+
+**파일**: `src/llm/LLMProviderFactory.ts`
+
+**지원 프로바이더:**
+| 프로바이더 | 타입 | 기본 모델 |
+|-----------|------|----------|
+| OpenAI | `openai` | `gpt-4o` |
+| Z.AI (智谱AI) | `glm` | `glm-4.7-flash` |
+
+**자동 감지 우선순위:**
+1. `config.provider` 명시적 설정
+2. `ZAI_API_KEY` 또는 `GLM_API_KEY` 환경변수 → GLM
+3. `OPENAI_API_KEY` 환경변수 → OpenAI
+4. `LLM_PROVIDER` 환경변수
+5. 기본값: OpenAI
+
+### 4.3 GLMProvider (Z.AI)
+
+**파일**: `src/llm/providers/GLMProvider.ts`
+
+**특징:**
+- Coding API 지원 (`useCodingAPI: true`)
+- `reasoning_content` 필드 지원
+- 환경변수: `ZAI_API_KEY`, `ZAI_BASE_URL`, `ZAI_CODING_BASE_URL`
+
+### 4.4 환경변수
+
+| 변수 | 설명 | 기본값 |
+|------|------|--------|
+| `LLM_PROVIDER` | 프로바이더 타입 (`openai`\|`glm`) | - |
+| `OPENAI_API_KEY` | OpenAI API 키 | - |
+| `ZAI_API_KEY` | Z.AI API 키 | - |
+| `GLM_API_KEY` | GLM API 키 (legacy) | - |
+| `ZAI_BASE_URL` | Z.AI 기본 URL | `https://api.z.ai/api/paas/v4/` |
+| `ZAI_CODING_BASE_URL` | Z.AI Coding URL | `https://api.z.ai/api/coding/paas/v4/` |
+
+
+---
+
+## 5. Agent 사고 구조
+
+### 5.1 Planner/Executor/Replanner
 
 | 컴포넌트 | 파일 | 상태 |
 |---------|------|------|
-| Planner | `src/agents/planner.ts` | 🔶 규칙 기반 |
+| Planner | `src/agents/planner.ts` | ✅ 완료 (LLM 연동) |
 | Executor | `src/agents/executor.ts` | ✅ 완료 |
 | Replanner | `src/agents/replanner/` | ✅ 완료 |
 
@@ -149,7 +217,7 @@ interface ChannelGatewayClient {
   RecoveryLimiter.ts    # 복구 시도 제한
 ```
 
-### 4.2 런타임 흐름
+### 5.2 런타임 흐름
 ```
 chat.send → TaskOrchestrator.createTask()
                     ↓
@@ -166,7 +234,7 @@ chat.send → TaskOrchestrator.createTask()
             ExecutionResult → chat.response
 ```
 
-### 4.3 Step 타입
+### 5.3 Step 타입
 ```typescript
 interface Step {
   id: string;
@@ -177,18 +245,22 @@ interface Step {
 }
 ```
 
-### 4.4 TODO: LLM 연동
+### 5.4 LLM 연동 상태
 ```typescript
-// src/agents/planner.ts:26-27
-// In production, this would call an LLM to generate the plan
+// src/agents/planner.ts:26
+// ✅ LLM 연동 완료 - LLMClient 통해 OpenAI/GLM 프로바이더 지원
 ```
 
+**Planner.lmClient 기능:**
+- `llmClient.isAvailable()`: LLM 사용 가능 여부 확인
+- `generatePlan()`: LLM 기반 계획 생성
+- `generateFallbackPlan()`: 키워드 기반 fallback
 
 ---
 
-## 5. Tool 정의 및 실행 구조
+## 6. Tool 정의 및 실행 구조
 
-### 5.1 ToolSpec 인터페이스
+### 6.1 ToolSpec 인터페이스
 ```typescript
 interface ToolSpec<TInput = unknown, TOutput = unknown> {
   id: string;
@@ -213,7 +285,7 @@ interface ToolContext {
 }
 ```
 
-### 5.2 구현된 도구
+### 6.2 구현된 도구
 
 | 카테고리 | 도구 ID | 파일 |
 |---------|--------|------|
@@ -222,7 +294,7 @@ interface ToolContext {
 | **Desktop** | system.run, system.run.raw | `src/tools/desktop/SystemRunTool.ts` |
 | **Filesystem** | file.read, file.write, file.list, file.glob | `src/tools/filesystem/FileIOTool.ts` |
 
-### 5.3 보안 컴포넌트
+### 6.3 보안 컴포넌트
 
 | 컴포넌트 | 파일 | 기능 |
 |---------|------|------|
@@ -230,7 +302,7 @@ interface ToolContext {
 | PathValidator | `src/tools/filesystem/PathValidator.ts` | 경로 검증 |
 | CommandSanitizer | `src/tools/desktop/CommandSanitizer.ts` | 명령어 필터링 |
 
-### 5.4 승인 시스템
+### 6.4 승인 시스템
 
 **파일 구조:**
 ```
@@ -241,7 +313,7 @@ interface ToolContext {
   /handlers
     cli-approval.ts           # CLI 기반 승인 ✅
     ws-approval.ts            # WebSocket 기반 승인 ✅
-    discord-approval.ts       # Discord 승인 🔶 (TODO)
+    discord-approval.ts       # Discord 승인 ✅ (완료)
 ```
 
 **승인 흐름:**
@@ -258,13 +330,13 @@ Task resume / abort
 
 ---
 
-## 6. 세션 및 저장 구조
+## 7. 세션 및 저장 구조
 
-### 6.1 저장 위치
+### 7.1 저장 위치
 - **기본**: `~/.moonbot/sessions/<sessionId>.jsonl`
 - **설정 가능**: `config.storage.sessionsPath`
 
-### 6.2 SessionKey 형식
+### 7.2 SessionKey 형식
 ```
 agent:<agentId>:session:<channelSessionId>
 ```
@@ -273,7 +345,7 @@ agent:<agentId>:session:<channelSessionId>
 - `parse(sessionKey)`: agentId, key 추출
 - `isValid(sessionKey)`: 유효성 검사
 
-### 6.3 SessionMessage 타입
+### 7.3 SessionMessage 타입
 ```typescript
 interface SessionMessage {
   type: 'user' | 'thought' | 'tool' | 'result' | 'error';
@@ -283,7 +355,7 @@ interface SessionMessage {
 }
 ```
 
-### 6.4 SessionManager API
+### 7.4 SessionManager API
 ```typescript
 class SessionManager {
   create(agentId, userId, channelId, channelSessionId?): Session;
@@ -300,11 +372,11 @@ class SessionManager {
 
 ---
 
-## 7. Cron 시스템
+## 8. Cron 시스템
 
 **파일**: `src/cron/manager.ts`
 
-### 7.1 CronManager API
+### 8.1 CronManager API
 ```typescript
 class CronManager {
   add(job: CronJob): void;
@@ -316,7 +388,7 @@ class CronManager {
 }
 ```
 
-### 7.2 CronJob 타입
+### 8.2 CronJob 타입
 ```typescript
 interface CronJob {
   id: string;
@@ -327,23 +399,27 @@ interface CronJob {
 }
 ```
 
-### 7.3 스케줄 처리
+### 8.3 스케줄 처리
 - `HH:MM` 형식으로 매일 해당 시각 실행
 - 첫 실행 후 24시간 간격으로 반복
 
-### 7.4 TODO: Agent 연동
+### 8.4 Agent 연동 상태
 ```typescript
-// src/cron/manager.ts:104
-// TODO: Send task to agent
-// 현재는 로그만 출력
+// src/cron/manager.ts:119-154
+// ✅ Agent 연동 완료 - orchestrator.createTask() 호출
 ```
+
+**CronManager.executeJob() 기능:**
+- TaskOrchestrator.createTask()로 크론 작업 실행
+- ChatMessage 필드 자동 완성 (agentId, channelId, userId)
+- `cron:${jobId}` 형식의 channelSessionId 사용
 
 
 ---
 
-## 8. Gateway vs Task Orchestrator 책임 분리
+## 9. Gateway vs Task Orchestrator 책임 분리
 
-### 8.1 Gateway 역할 (연결 계층)
+### 9.1 Gateway 역할 (연결 계층)
 
 **파일**: `src/gateway/server.ts`
 
@@ -354,7 +430,7 @@ Gateway는 순수한 **연결 및 라우팅 계층**입니다:
 - Rate limiting
 - **하지 않는 것**: 프로세스 실행, 작업 상태 관리
 
-### 8.2 Task Orchestrator 역할 (실행 계층)
+### 9.2 Task Orchestrator 역할 (실행 계층)
 
 **파일**: `src/orchestrator/TaskOrchestrator.ts`
 
@@ -365,7 +441,7 @@ Task Orchestrator는 **실행 및 조율 계층**입니다:
 - 실패/재시도/중단 처리
 - 승인 플로우 관리
 
-### 8.3 Task 상태 머신
+### 9.3 Task 상태 머신
 
 ```
 PENDING → RUNNING → DONE
@@ -378,7 +454,7 @@ RUNNING → FAILED (실행 실패)
 RUNNING → ABORTED (사용자 중단)
 ```
 
-### 8.4 TaskOrchestrator API
+### 9.4 TaskOrchestrator API
 
 ```typescript
 class TaskOrchestrator {
@@ -400,7 +476,7 @@ class TaskOrchestrator {
 }
 ```
 
-### 8.5 PerChannelQueue
+### 9.5 PerChannelQueue
 
 **파일**: `src/orchestrator/PerChannelQueue.ts`
 
@@ -409,7 +485,7 @@ class TaskOrchestrator {
 - 최대 큐 크기 제한 (기본 100)
 - 42개 단위 테스트로 검증
 
-### 8.6 메시지 흐름
+### 9.6 메시지 흐름
 
 ```
 Discord/Slack → Gateway (chat.send) → TaskOrchestrator.createTask()
@@ -423,9 +499,9 @@ Discord/Slack ← Gateway (chat.response) ← TaskResponse
 
 ---
 
-## 9. 개발 및 운영 CLI
+## 10. 개발 및 운영 CLI
 
-### 9.1 구현된 명령어
+### 10.1 구현된 명령어
 
 | 명령 | 파일 | 설명 |
 |------|------|------|
@@ -448,7 +524,7 @@ Discord/Slack ← Gateway (chat.response) ← TaskResponse
 | `moonbot approvals approve <id>` | 〃 | 승인 |
 | `moonbot approvals deny <id>` | 〃 | 거부 |
 
-### 9.2 개발 환경
+### 10.2 개발 환경
 
 | 항목 | 값 |
 |------|---|
@@ -457,7 +533,7 @@ Discord/Slack ← Gateway (chat.response) ← TaskResponse
 | 패키지 매니저 | pnpm |
 | 테스트 프레임워크 | Vitest |
 
-### 9.3 npm 스크립트
+### 10.3 npm 스크립트
 
 ```bash
 pnpm build          # TypeScript 컴파일
@@ -471,11 +547,11 @@ pnpm discord        # Discord 봇 실행
 
 ---
 
-## 10. 타입 정의
+## 11. 타입 정의
 
 **파일**: `src/types/index.ts`
 
-### 10.1 Task 관련 타입
+### 11.1 Task 관련 타입
 
 ```typescript
 type TaskState = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'PAUSED' | 'ABORTED';
@@ -515,7 +591,7 @@ interface TaskResponse {
 }
 ```
 
-### 10.2 승인 관련 타입
+### 11.2 승인 관련 타입
 
 ```typescript
 interface ApprovalRequestEvent {
@@ -536,9 +612,9 @@ interface ApprovalResolvedEvent {
 
 ---
 
-## 11. 테스트
+## 12. 테스트
 
-### 11.1 테스트 현황
+### 12.1 테스트 현황
 
 | 컴포넌트 | 테스트 파일 | 테스트 수 |
 |---------|------------|----------|
@@ -546,7 +622,7 @@ interface ApprovalResolvedEvent {
 | TaskOrchestrator | `src/orchestrator/TaskOrchestrator.test.ts` | 36개 |
 | Gateway Integration | `src/gateway/integration.test.ts` | 8개 |
 
-### 11.2 테스트 실행
+### 12.2 테스트 실행
 
 ```bash
 pnpm test:run           # 전체 테스트 실행

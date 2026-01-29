@@ -6,7 +6,7 @@
 - **Name**: Moonbot
 - **Stack**: Node.js 22+, TypeScript (ESM), WebSocket, JSON-RPC
 - **Primary Language**: TypeScript
-- **Key Dependencies**: discord.js, playwright, ws, @sinclair/typebox, zod, commander
+- **Key Dependencies**: discord.js, playwright, ws, @sinclair/typebox, zod, commander, openai
 
 ## Core Rules (Must Follow)
 1. **Immutability**: 객체/배열 변경 시 spread operator 사용 (mutation 금지)
@@ -25,8 +25,10 @@
 | Sessions | ✅ Complete | - |
 | Auth | ✅ Complete | - |
 | Tools (4 categories) | ✅ Complete | - |
-| Planner | 🔶 Rule-based | LLM TODO |
-| Cron | 🔶 Partial | Agent TODO |
+| Planner | ✅ Complete (LLM) | - |
+| LLM Infrastructure | ✅ Complete | - |
+| Cron | ✅ Complete | - |
+| Discord Approval | ✅ Complete | - |
 
 ## Directory Structure
 ```
@@ -42,7 +44,7 @@
     discord.ts        # Discord adapter
     GatewayClient.ts  # WebSocket client for channels
   /agents             # Cognitive model
-    planner.ts        # Goal decomposition (rule-based)
+    planner.ts        # Goal decomposition (LLM-powered)
     executor.ts       # Tool execution
     /replanner        # Failure recovery modules
   /tools              # Tool definitions
@@ -53,13 +55,21 @@
     /approval         # Approval flow system
     /runtime          # ToolRuntime, ApprovalManager
   /sessions           # JSONL session storage
-  /cron               # Scheduled tasks
+  /cron               # Scheduled tasks (with Agent integration)
   /auth               # Pairing, token auth
   /cli                # CLI commands
     /commands         # gateway, channel, config, logs, doctor, call, pairing, approvals
   /config             # System configuration
   /types              # TypeScript definitions
   /utils              # Logger, error-sanitizer
+  /llm                # LLM infrastructure (NEW)
+    LLMClient.ts      # Planner LLM client
+    LLMProviderFactory.ts  # Provider factory
+    /providers        # LLM provider implementations
+      BaseLLMProvider.ts
+      OpenAIProvider.ts
+      GLMProvider.ts   # Z.AI (智谱AI) provider
+    types.ts          # LLM types
 ```
 
 ## Key Patterns
@@ -145,17 +155,29 @@ moonbot pairing approve <code>
   - `MOONBOT_DISCORD_TOKEN` - Discord bot token
   - `MOONBOT_GATEWAY_PORT` - Gateway port (default: 18789)
   - `MOONBOT_GATEWAY_HOST` - Gateway host (default: 127.0.0.1)
+- **LLM Env Vars** (Optional):
+  - `LLM_PROVIDER` - Provider type (`openai`|`glm`)
+  - `OPENAI_API_KEY` - OpenAI API key
+  - `ZAI_API_KEY` - Z.AI (智谱AI) API key
+  - `GLM_API_KEY` - GLM API key (legacy)
+  - `ZAI_BASE_URL` - Z.AI base URL (default: `https://api.z.ai/api/paas/v4/`)
+  - `ZAI_CODING_BASE_URL` - Z.AI coding URL (default: `https://api.z.ai/api/coding/paas/v4/`)
 - **Config Path**: `~/.moonbot/config.json`
+
+## Completed Items (2026-01-29)
+
+| Priority | Description |
+|----------|-------------|
+| P0 | LLM integration (OpenAI, GLM) |
+| P1 | Approval flow implementation |
+| P1 | Cron Agent task dispatch |
+| P2 | Discord approval handler |
 
 ## TODO Items (from codebase)
 
 | Priority | Location | Description |
 |----------|----------|-------------|
-| P0 | `src/agents/planner.ts:26` | LLM integration |
-| P1 | `src/agents/executor.ts:269` | Approval flow |
-| P1 | `src/cron/manager.ts:104` | Agent task dispatch |
-| P2 | `src/tools/approval/handlers/discord-approval.ts:212` | Discord message |
-| P3 | `src/tools/desktop/CommandSanitizer.ts:79` | New commands |
+| P3 | `src/tools/desktop/CommandSanitizer.ts:79` | New commands (security review needed) |
 
 ## Roadmap
 - Multi-agent slots (different personalities)
@@ -166,6 +188,7 @@ moonbot pairing approve <code>
 
 ## Change Log
 ```
-2026-01-29 = "PROJECT.md 현행화 - 구현 현황, TODO 목록, 테스트 현황 반영"
+2026-01-29 = "문서 현행화 - LLM 인프라 추가, P0-P2 TODO 완료 반영"
+2026-01-29 = "GLM(Z.AI) LLM provider 통합"
 2026-01-28 = "TaskOrchestrator 통합 완료, Vitest 테스트 추가"
 ```

@@ -1,6 +1,6 @@
 # Moltbot 프레임워크 기반 로컬 우선주의 AI 에이전트 시스템 PRD
 
-> **문서 버전**: 2.0 (2026-01-29 현행화)
+> **문서 버전**: 2.1 (2026-01-29 현행화)
 > **기술 사양서**: `agent_system_spec.md`
 
 ## 1. 제품 정의 및 아키텍처 철학
@@ -23,8 +23,10 @@
 | Tools (5종) | ✅ 완료 | Browser, HTTP, Desktop, Filesystem |
 | Sessions | ✅ 완료 | JSONL 저장, SessionKey, 컴팩션 |
 | Auth | ✅ 완료 | 페어링, 토큰 해시 검증, 리플레이 방지 |
-| Cron | 🔶 부분 | 스케줄링 구현, Agent 연동 미완 |
-| Agents (Planner) | 🔶 부분 | 규칙 기반, LLM 연동 미구현 |
+| Cron | ✅ 완료 | 스케줄링 구현, Agent 연동 완료 |
+| Agents (Planner) | ✅ 완료 | LLM 연동 완료 (OpenAI/GLM) |
+| LLM 인프라 | ✅ 완료 | LLMClient, LLMProviderFactory (OpenAI, GLM) |
+| Discord 승인 | ✅ 완료 | DiscordApprovalHandler 구현 |
 | 기타 채널 (Slack 등) | ❌ 미구현 | 로드맵 참조 |
 
 
@@ -55,9 +57,11 @@
 
 | 컴포넌트 | 파일 위치 | 상태 |
 |---------|----------|------|
-| Planner | `src/agents/planner.ts` | 🔶 규칙 기반 (LLM 연동 미구현) |
+| Planner | `src/agents/planner.ts` | ✅ 완료 (LLM 연동) |
 | Executor | `src/agents/executor.ts` | ✅ 완료 (Replanner 통합) |
 | Replanner | `src/agents/replanner/` | ✅ 완료 |
+| LLMClient | `src/llm/LLMClient.ts` | ✅ 완료 |
+| LLMProviderFactory | `src/llm/LLMProviderFactory.ts` | ✅ 완료 |
 
 **Replanner 서브모듈:**
 - `FailureAnalyzer.ts`: 실패 원인 분석
@@ -70,12 +74,18 @@
 - 도구 fallback 시나리오 (예: API 실패 시 browser.open 시도) 구현
 - **에러 포맷 분리**: `userMessage` (채널 전송) vs `internalMessage` (로그용)
 
-### 3.3 TODO: LLM 연동
-현재 Planner는 규칙 기반으로 동작하며, 실제 LLM 호출은 미구현 상태:
+### 3.3 LLM 연동 상태
+현재 Planner는 LLM을 통한 계획 생성을 지원합니다:
 ```typescript
-// src/agents/planner.ts:26-27
-// In production, this would call an LLM to generate the plan
+// src/agents/planner.ts:29-64
+// ✅ LLM 연동 완료 - LLMClient 통해 OpenAI/GLM 프로바이더 지원
 ```
+
+**지원 LLM 프로바이더:**
+| 프로바이더 | 환경변수 | 기본 모델 |
+|-----------|----------|----------|
+| OpenAI | `OPENAI_API_KEY` | `gpt-4o` |
+| Z.AI (智谱AI) | `ZAI_API_KEY` | `glm-4.7-flash` |
 
 
 ## 4. 도구 시스템 (ToolKit)
@@ -111,7 +121,7 @@
 **승인 핸들러:**
 - `cli-approval.ts`: CLI 기반 승인 ✅
 - `ws-approval.ts`: WebSocket 기반 승인 ✅
-- `discord-approval.ts`: Discord 승인 🔶 (TODO: 메시지 전송 미구현)
+- `discord-approval.ts`: Discord 승인 ✅ (완료)
 
 **RPC 핸들러:**
 - `approval.grant`: 승인/거부 처리
@@ -155,12 +165,17 @@
 ### 6.2 하트비트 및 이벤트 기반 발화
 - Active hours 설정, 상태 변화 감지 시 Proactive 메시지 발송
 
-### 6.3 TODO: Agent 연동
-현재 CronManager는 스케줄링만 구현되어 있으며, 실제 Agent 호출은 미구현:
+### 6.3 Agent 연동 상태
+현재 CronManager는 TaskOrchestrator를 통해 Agent를 호출합니다:
 ```typescript
-// src/cron/manager.ts:104
-// TODO: Send task to agent
+// src/cron/manager.ts:119-154
+// ✅ Agent 연동 완료 - orchestrator.createTask() 호출
 ```
+
+**CronManager.executeJob() 기능:**
+- TaskOrchestrator.createTask()로 크론 작업 실행
+- ChatMessage 필드 자동 완성 (agentId, channelId, userId)
+- `cron:${jobId}` 형식의 channelSessionId 사용
 
 
 ## 7. 운영 및 CLI 관리 도구
@@ -257,13 +272,23 @@ task.on('complete', (result) => {
 
 ### 9.1 TODO 항목 (코드베이스에서 발견)
 
-| 위치 | TODO 내용 | 우선순위 |
-|------|----------|---------|
-| `src/agents/planner.ts:26` | LLM 연동 (현재 규칙 기반) | P0 |
-| `src/agents/executor.ts:269` | Approval flow 구현 | P1 |
-| `src/cron/manager.ts:104` | Agent로 task 전송 | P1 |
-| `src/tools/approval/handlers/discord-approval.ts:212` | Discord 메시지 전송 | P2 |
-| `src/tools/desktop/CommandSanitizer.ts:79` | 새 명령어 추가 (보안 검토 후) | P3 |
+| 위치 | TODO 내용 | 우선순위 | 상태 |
+|------|----------|---------|------|
+| ~~`src/agents/planner.ts:26`~~ | LLM 연동 (현재 규칙 기반) | P0 | ✅ 완료 |
+| ~~`src/agents/executor.ts:269`~~ | Approval flow 구현 | P1 | ✅ 완료 |
+| ~~`src/cron/manager.ts:104`~~ | Agent로 task 전송 | P1 | ✅ 완료 |
+| ~~`src/tools/approval/handlers/discord-approval.ts:212`~~ | Discord 메시지 전송 | P2 | ✅ 완료 |
+| `src/tools/desktop/CommandSanitizer.ts:79` | 새 명령어 추가 (보안 검토 후) | P3 | ⏳ 유예 |
+| `src/channels/discord.ts:188` | WebSocket client TODO (이미 구현됨) | - | 🚫 오래된 주석 |
+
+### 9.2 완료된 항목 (2026-01-29)
+
+| 항목 | 설명 |
+|------|------|
+| **LLM 인프라** | OpenAI, GLM(Z.AI) 프로바이더 지원 |
+| **Planner LLM 연동** | LLMClient를 통한 계획 생성 |
+| **Cron Agent 연동** | TaskOrchestrator를 통한 크론 작업 실행 |
+| **Discord 승인 핸들러** | DiscordApprovalHandler 구현 완료 |
 
 ### 9.2 기술 발전 방향
 - **멀티 에이전트 슬롯**: 하나의 Gateway에서 성격/역할이 다른 에이전트 동시 운영
