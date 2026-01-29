@@ -10,3 +10,4 @@ dist/
 #클로드 작업 관련 파일
 .claude/docs/tasks/*/context.md
 .claude/analysisContext.yaml
+.claude.backup-*

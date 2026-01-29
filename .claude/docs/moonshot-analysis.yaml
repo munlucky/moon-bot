@@ -1,79 +1,59 @@
 schemaVersion: "1.0"
 request:
-  userMessage: "Implementation Task: Phase 4 Replanner Logic - Implement the Replanner system for resilient agent execution."
-  taskType: feature
+  userMessage: "공식문서가 이거야 확인하고 다시 개선해줘."
+  taskType: modification
   keywords:
-    - implementation
-    - replanner
-    - failure recovery
-    - resilient agent
-    - alternative tools
-    - path replanning
+    - 공식문서
+    - 확인
+    - 개선
 repo:
   gitBranch: "main"
-  gitStatus: "clean"
-  openFiles: []
+  gitStatus: "dirty"
+  openFiles:
+    - .claude/README.md
+    - .claude/CLAUDE.md
+    - .claude/skills/moonshot-orchestrator/SKILL.md
+    - .claude/rules/workflow.md
+    - .claude/rules/quality.md
   changedFiles:
-    - src/agents/replanner/types.ts
-    - src/agents/replanner/FailureAnalyzer.ts
-    - src/agents/replanner/AlternativeSelector.ts
-    - src/agents/replanner/PathReplanner.ts
-    - src/agents/replanner/RecoveryLimiter.ts
-    - src/agents/replanner.ts
-    - src/agents/executor.ts
-    - src/agents/planner.ts
-    - src/tools/runtime/ToolRuntime.ts
+    - .claude/CLAUDE.md
+    - .claude/README.md
+    - install-claude.sh
+    - .claude/rules/agents/agent-definition.md
+    - .claude/rules/basic-principles.md
+    - .claude/rules/communication.md
+    - .claude/rules/context-management.md
+    - .claude/rules/docs/documentation.md
+    - .claude/rules/output-format.md
+    - .claude/rules/quality.md
+    - .claude/rules/skills/skill-definition.md
+    - .claude/rules/workflow.md
 signals:
-  hasContextMd: true
+  hasContextMd: false
   hasPendingQuestions: false
   requirementsClear: true
   implementationReady: true
   implementationComplete: true
   hasMockImplementation: false
-  apiSpecConfirmed: true
-  reactProject: false
+  apiSpecConfirmed: false
 estimates:
-  estimatedFiles: 9
-  estimatedLines: 750
-  estimatedTime: 2h
-phase: complete
-complexity: medium
+  estimatedFiles: 1
+  estimatedLines: 90
+  estimatedTime: "30m"
+phase: verification
+complexity: simple
 missingInfo: []
 decisions:
-  recommendedAgents:
-    - pre-flight-check
-    - implementation-runner
-    - completion-verifier
-    - codex-review-code
+  recommendedAgents: []
   skillChain:
-    - pre-flight-check
     - implementation-runner
-    - completion-verifier
-    - codex-review-code
-    - efficiency-tracker
-    - session-logger
+    - verify-changes.sh
   parallelGroups: []
 artifacts:
-  tasksRoot: ".claude/docs/tasks"
-  contextDocPath: ".claude/docs/tasks/phase4-replanner/context.md"
+  contextDocPath: .claude/docs/tasks/claude-memory-docs/context.md
   verificationScript: .claude/agents/verification/verify-changes.sh
-tokenBudget:
-  specSummaryTrigger: 2000
-  splitTrigger: 5
-  contextMaxTokens: 8000
-  warningThreshold: 0.8
-projectMemory:
-  projectId: "moon-bot"
-  boundaryStatus: "not_checked"
-  boundary:
-    violations: []
-    needsApproval: []
-    reminders: []
-  relatedConventions: []
-  lastChecked: null
 notes:
-  - Context document exists with detailed requirements
-  - 6 files created, 3 files modified
-  - Alternative tool mapping defined
-  - Acceptance tests T1-T7 defined
-  - Build verified: SUCCESS
+  - "taskType=modification, confidence=medium"
+  - "complexity=simple, estimated=heuristic"
+  - "implementation: update README with official memory guidance"
+  - "verification: not run"
