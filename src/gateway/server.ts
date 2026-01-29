@@ -11,6 +11,7 @@ import { createToolHandlers } from "./handlers/tools.handler.js";
 import { createChannelHandlers } from "./handlers/channel.handler.js";
 import { saveConfig } from "../config/manager.js";
 import { DiscordAdapter } from "../channels/discord.js";
+import { TaskOrchestrator } from "../orchestrator/index.js";
 
 /**
  * Rate limiter to prevent connection flooding.
@@ -123,6 +124,7 @@ export class GatewayServer {
   private rateLimiter: ConnectionRateLimiter;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private toolRuntime: ToolRuntime | null = null;
+  private orchestrator: TaskOrchestrator;
 
   constructor(config: SystemConfig, workspaceRoot?: string) {
     this.config = config;
@@ -139,6 +141,14 @@ export class GatewayServer {
       defaultTimeoutMs: 30000,
       maxConcurrent: 10,
       enableApprovals: true,
+    });
+
+    // Initialize TaskOrchestrator
+    this.orchestrator = new TaskOrchestrator(config);
+
+    // Register orchestrator response callback
+    this.orchestrator.onResponse((response) => {
+      this.broadcast("chat.response", response);
     });
 
     this.setupHandlers();
@@ -236,33 +246,21 @@ export class GatewayServer {
       return { clientId, ...clientInfo };
     });
 
-    // chat.send: Send message from surface to agent
+    // chat.send: Send message from surface to agent (delegated to Orchestrator)
     this.rpc.register("chat.send", async (params) => {
       const message = params as ChatMessage;
       this.logger.info(`Chat message from ${message.channelId}: ${message.text}`);
 
-      // TODO: In Phase 2, this will be delegated to TaskOrchestrator
-      // For now, provide a simple echo response to verify the communication loop
-      const sessionId = message.sessionId || randomUUID();
+      // Generate channel session ID for per-channel queue mapping
+      const channelSessionId = message.channelId;
 
-      // Simulate async processing - in production, Agent would process and respond
-      setImmediate(() => {
-        const response: TaskResponse = {
-          channelId: message.channelId,
-          text: `[Echo] Received: ${message.text}`,
-          status: "completed",
-          metadata: {
-            sessionId,
-            agentId: message.agentId,
-            timestamp: Date.now(),
-          },
-        };
-
-        // Broadcast response to all connected channels
-        this.broadcast("chat.response", response);
+      // Delegate to TaskOrchestrator
+      const { taskId, state } = this.orchestrator.createTask({
+        message,
+        channelSessionId,
       });
 
-      return { status: "queued", sessionId };
+      return { status: "queued", taskId, state };
     });
 
     // session.get: Get session by ID
@@ -361,7 +359,17 @@ export class GatewayServer {
       this.cleanupInterval = null;
     }
 
+    // Shutdown orchestrator
+    this.orchestrator.shutdown();
+
     this.logger.info("Gateway stopped");
+  }
+
+  /**
+   * Get the orchestrator instance.
+   */
+  getOrchestrator(): TaskOrchestrator {
+    return this.orchestrator;
   }
 
   broadcast(method: string, params?: unknown): void {

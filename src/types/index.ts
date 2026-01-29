@@ -231,3 +231,54 @@ export interface TaskResponse {
   status: "completed" | "failed" | "pending";
   metadata?: Record<string, unknown>;
 }
+
+/**
+ * Task states for the orchestrator state machine.
+ */
+export type TaskState = "PENDING" | "RUNNING" | "FAILED" | "DONE";
+
+/**
+ * Task entity managed by the Orchestrator.
+ */
+export interface Task {
+  /** Unique task identifier (UUID + timestamp) */
+  id: string;
+  /** Current state in the lifecycle */
+  state: TaskState;
+  /** Channel session identifier for per-channel queue mapping */
+  channelSessionId: string;
+  /** Original chat message that triggered this task */
+  message: ChatMessage;
+  /** Execution timestamp (ms since epoch) */
+  createdAt: number;
+  /** Last state update timestamp (ms since epoch) */
+  updatedAt: number;
+  /** Error details if state is FAILED */
+  error?: TaskError;
+  /** Final result text if state is DONE */
+  result?: string;
+}
+
+/**
+ * Error information for failed tasks.
+ */
+export interface TaskError {
+  /** Machine-readable error code */
+  code: string;
+  /** User-friendly error message (sent to channel) */
+  userMessage: string;
+  /** Internal error details (logged only) */
+  internalMessage?: string;
+  /** Stack trace for debugging */
+  stack?: string;
+}
+
+/**
+ * Event emitted when task state changes.
+ */
+export interface TaskEvent {
+  taskId: string;
+  previousState: TaskState | null;
+  newState: TaskState;
+  timestamp: number;
+}
