@@ -179,6 +179,7 @@ export function formatApprovalUpdateEmbed(
 export class DiscordApprovalHandler implements ApprovalHandler {
   private adapter: DiscordAdapter | null = null;
   private channelId: string | null = null;
+  private messageStore: Map<string, { channelId: string; messageId: string }> = new Map();
 
   constructor(adapter?: DiscordAdapter, channelId?: string) {
     this.adapter = adapter ?? null;
@@ -209,14 +210,38 @@ export class DiscordApprovalHandler implements ApprovalHandler {
 
     const embed = formatApprovalEmbed(request);
 
-    // TODO: Implement actual Discord message sending
-    // This requires extending DiscordAdapter to support Embed messages
-    // For now, this is a placeholder that logs the request
-    console.log(`[DiscordApproval] Would send approval request:`, {
-      title: embed.title,
-      requestId: request.id,
-      toolId: request.toolId,
-    });
+    // Use configured channel ID
+    const targetChannelId = this.channelId;
+
+    if (!targetChannelId) {
+      console.warn(`[DiscordApproval] No channel ID configured for approval request ${request.id}`);
+      return;
+    }
+
+    try {
+      // Send actual Discord Embed message
+      const message = await this.adapter.sendEmbed(targetChannelId, embed);
+
+      if (message) {
+        // Store message reference for updates
+        this.messageStore.set(request.id, {
+          channelId: targetChannelId,
+          messageId: message.id,
+        });
+
+        console.log(`[DiscordApproval] Approval request sent:`, {
+          title: embed.title,
+          requestId: request.id,
+          toolId: request.toolId,
+          messageId: message.id,
+        });
+      }
+    } catch (error) {
+      console.error(`[DiscordApproval] Failed to send approval request:`, {
+        error: error instanceof Error ? error.message : String(error),
+        requestId: request.id,
+      });
+    }
   }
 
   /**
@@ -229,10 +254,36 @@ export class DiscordApprovalHandler implements ApprovalHandler {
 
     const embed = formatApprovalUpdateEmbed(request);
 
-    console.log(`[DiscordApproval] Would send approval update:`, {
-      title: embed.title,
-      status: request.status,
-      requestId: request.id,
-    });
+    // Get stored message reference
+    const messageRef = this.messageStore.get(request.id);
+    if (!messageRef) {
+      console.warn(`[DiscordApproval] No message reference for approval update ${request.id}`);
+      return;
+    }
+
+    try {
+      // Edit the existing message
+      const success = await this.adapter.editMessage(
+        messageRef.channelId,
+        messageRef.messageId,
+        embed
+      );
+
+      if (success) {
+        console.log(`[DiscordApproval] Approval update sent:`, {
+          title: embed.title,
+          status: request.status,
+          requestId: request.id,
+        });
+
+        // Clean up message store after update
+        this.messageStore.delete(request.id);
+      }
+    } catch (error) {
+      console.error(`[DiscordApproval] Failed to send approval update:`, {
+        error: error instanceof Error ? error.message : String(error),
+        requestId: request.id,
+      });
+    }
   }
 }

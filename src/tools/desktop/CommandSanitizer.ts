@@ -52,9 +52,10 @@ export class CommandSanitizer {
    * - Version control: git
    * - Package managers: pnpm, npm, yarn, bun
    * - Runtimes: node, python, python3, deno
-   * - Build tools: pip, cargo, go
+   * - Build tools: pip, cargo, go, make, cmake
    * - Safe file operations: ls, cat, head, tail, grep, find, stat, file, which, where, echo, pwd
    * - Safe directory operations: cd, mkdir, cp, mv
+   * - Archive tools: tar, zip, unzip (safe for extracting archives within workspace)
    */
   private static readonly DEFAULT_ALLOWLIST: readonly string[] = [
     // Version control
@@ -68,6 +69,8 @@ export class CommandSanitizer {
 
     // Build tools
     "pip", "cargo", "go",
+    "make",   // Build automation (safe: respects workspace boundaries)
+    "cmake", // Build system generator (safe: only generates build files)
 
     // Safe file operations
     "ls", "cat", "head", "tail", "grep", "find",
@@ -76,7 +79,16 @@ export class CommandSanitizer {
     // Safe directory operations (single-level, no destructive flags)
     "cd", "mkdir", "cp", "mv",
 
-    // TODO: Add new commands here after security review
+    // Archive tools (safe: operations limited to workspace)
+    "tar",   // Tape archive (safe: denylist prevents dangerous flags)
+    "zip",   // Zip compression (safe: creates archives within workspace)
+    "unzip", // Zip extraction (safe: extracts to workspace, denylist prevents override attacks)
+
+    // NOTE: Docker/Kubectl NOT included - high security risk:
+    // - Container escape possible via volume mounts
+    // - Privileged containers can access host resources
+    // - Kubectl can modify cluster resources
+    // - Use requires explicit admin approval via `requiresApproval: true`
   ];
 
   private denylist: string[];

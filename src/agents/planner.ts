@@ -2,6 +2,7 @@
 
 import { createLogger, type Logger } from "../utils/logger.js";
 import type { SystemConfig, Session, SessionMessage, Step } from "../types/index.js";
+import { LLMClient, type LLMPlanRequest } from "../llm/LLMClient.js";
 
 export { Step } from "../types/index.js";
 
@@ -13,57 +14,71 @@ export interface Plan {
 export class Planner {
   private config: SystemConfig;
   private logger: Logger;
+  private llmClient: LLMClient;
+  private availableTools: string[];
 
-  constructor(config: SystemConfig) {
+  constructor(config: SystemConfig, availableTools: string[] = []) {
     this.config = config;
     this.logger = createLogger(config);
+    this.availableTools = availableTools;
+
+    // Initialize LLM client
+    this.llmClient = new LLMClient({
+      apiKey: process.env.OPENAI_API_KEY,
+      model: "gpt-4o",
+    });
   }
 
   async plan(message: string, session?: Session): Promise<Plan> {
     this.logger.info("Planning steps for message", { message });
 
-    // For now, return a simple plan
-    // In production, this would call an LLM to generate the plan
-    const steps: Step[] = [];
+    // Try to use LLM for planning
+    if (this.llmClient.isAvailable()) {
+      try {
+        const request: LLMPlanRequest = {
+          message,
+          availableTools: this.availableTools,
+          sessionContext: session?.messages
+            .filter((m) => m.type === "user" || m.type === "assistant")
+            .map((m) => `${m.type}: ${m.content}`)
+            .join("\n"),
+        };
 
-    // Analyze if tools are needed
-    const lowerMessage = message.toLowerCase();
+        const response = await this.llmClient.generatePlan(request);
 
-    if (lowerMessage.includes("search") || lowerMessage.includes("find")) {
-      steps.push({
-        id: "search",
-        description: "Search for information",
-        toolId: "browser.search",
-      });
+        this.logger.debug("Generated plan (LLM)", {
+          steps: response.steps,
+          reasoning: response.reasoning,
+        });
+
+        return {
+          steps: response.steps,
+          estimatedDuration: response.steps.length * 5000, // 5s per step estimate
+        };
+      } catch (error) {
+        this.logger.warn("LLM planning failed, falling back to keyword matching", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
-    if (lowerMessage.includes("open") || lowerMessage.includes("browse")) {
-      steps.push({
-        id: "browse",
-        description: "Open browser",
-        toolId: "browser.open",
-      });
-    }
+    // Fallback to keyword-based planning
+    return this.keywordPlan(message);
+  }
 
-    if (lowerMessage.includes("file") || lowerMessage.includes("save")) {
-      steps.push({
-        id: "file",
-        description: "File operation",
-        toolId: "filesystem.write",
-      });
-    }
+  /**
+   * Fallback keyword-based planning (used when LLM is unavailable)
+   */
+  private keywordPlan(message: string): Plan {
+    const response = this.llmClient.generateFallbackPlan(message);
 
-    // Default response step
-    steps.push({
-      id: "respond",
-      description: "Generate response",
+    this.logger.debug("Generated plan (keyword fallback)", {
+      steps: response.steps,
     });
 
-    this.logger.debug("Generated plan", { steps });
-
     return {
-      steps,
-      estimatedDuration: steps.length * 5000, // 5s per step estimate
+      steps: response.steps,
+      estimatedDuration: response.steps.length * 5000,
     };
   }
 

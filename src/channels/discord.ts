@@ -6,11 +6,15 @@ import {
   Message,
   Partials,
   ButtonInteraction,
+  EmbedBuilder,
+  APIActionRowComponent,
+  APIMessage,
 } from "discord.js";
 import type { SystemConfig, ChatMessage, TaskResponse } from "../types/index.js";
 import { createLogger, type Logger } from "../utils/logger.js";
 import { parseButtonCustomId } from "../tools/approval/handlers/discord-approval.js";
 import { ChannelGatewayClient } from "./GatewayClient.js";
+import type { DiscordEmbedMessage, DiscordButtonComponent } from "../tools/approval/types.js";
 
 // Type for the gateway call method (will be available when integration is complete)
 interface GatewayClient {
@@ -273,6 +277,130 @@ export class DiscordAdapter {
       }
     } catch (error) {
       this.logger.error(`Failed to send message to channel ${channelId}`, { error });
+    }
+  }
+
+  /**
+   * Send an Embed message with optional components to a channel.
+   * Used for approval requests and other rich messages.
+   */
+  async sendEmbed(
+    channelId: string,
+    embed: DiscordEmbedMessage
+  ): Promise<Message | null> {
+    if (!this.client) {
+      this.logger.warn("Discord client not available for embed sending");
+      return null;
+    }
+
+    try {
+      const channel = await this.client.channels.fetch(channelId);
+      if (!channel?.isSendable()) {
+        this.logger.warn(`Channel ${channelId} is not sendable`);
+        return null;
+      }
+
+      // Build Discord Embed
+      const discordEmbed = new EmbedBuilder()
+        .setTitle(embed.title)
+        .setDescription(embed.description)
+        .setColor(embed.color)
+        .setTimestamp();
+
+      // Add fields if present
+      if (embed.fields && embed.fields.length > 0) {
+        discordEmbed.addFields(embed.fields);
+      }
+
+      // Build components (buttons) - use proper Discord.js types
+      const components: any[] = [];
+      if (embed.components && embed.components.length > 0) {
+        for (const actionRow of embed.components) {
+          const rowComponents = actionRow.components.map((button) => ({
+            type: button.type,
+            style: button.style,
+            label: button.label,
+            customId: button.custom_id,
+          }));
+          components.push({
+            type: actionRow.type,
+            components: rowComponents,
+          });
+        }
+      }
+
+      // Send message with embed and components
+      const message = await channel.send({
+        embeds: [discordEmbed],
+        components: components.length > 0 ? components : undefined,
+      });
+
+      this.logger.debug(`Embed sent to channel ${channelId}`, {
+        title: embed.title,
+        messageId: message.id,
+      });
+
+      return message;
+    } catch (error) {
+      this.logger.error(`Failed to send embed to channel ${channelId}`, { error });
+      return null;
+    }
+  }
+
+  /**
+   * Edit an existing message (e.g., to update approval status).
+   */
+  async editMessage(
+    channelId: string,
+    messageId: string,
+    embed: DiscordEmbedMessage
+  ): Promise<boolean> {
+    if (!this.client) {
+      this.logger.warn("Discord client not available for message editing");
+      return false;
+    }
+
+    try {
+      const channel = await this.client.channels.fetch(channelId);
+      if (!channel?.isSendable()) {
+        this.logger.warn(`Channel ${channelId} is not sendable`);
+        return false;
+      }
+
+      const message = await channel.messages.fetch(messageId);
+      if (!message) {
+        this.logger.warn(`Message ${messageId} not found in channel ${channelId}`);
+        return false;
+      }
+
+      // Build Discord Embed
+      const discordEmbed = new EmbedBuilder()
+        .setTitle(embed.title)
+        .setDescription(embed.description)
+        .setColor(embed.color)
+        .setTimestamp();
+
+      if (embed.fields && embed.fields.length > 0) {
+        discordEmbed.addFields(embed.fields);
+      }
+
+      // Edit the message
+      await message.edit({
+        embeds: [discordEmbed],
+        components: [],
+      });
+
+      this.logger.debug(`Message ${messageId} updated in channel ${channelId}`, {
+        title: embed.title,
+      });
+
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Failed to edit message ${messageId} in channel ${channelId}`,
+        { error }
+      );
+      return false;
     }
   }
 

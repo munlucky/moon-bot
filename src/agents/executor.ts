@@ -5,6 +5,7 @@ import type { SystemConfig, ToolContext, SessionMessage, ToolResult, ToolSpec } 
 import { Planner, type Step } from "./planner.js";
 import { Replanner, type ToolFailure, type ExecutionContext } from "./replanner.js";
 import type { Toolkit } from "../tools/index.js";
+import type { ToolRuntime } from "../tools/runtime/ToolRuntime.js";
 
 export interface ExecutionResult {
   success: boolean;
@@ -24,16 +25,25 @@ export class Executor {
   private planner: Planner;
   private toolkit: Toolkit;
   private replanner: Replanner;
+  private toolRuntime: ToolRuntime | null = null;
 
   constructor(config: SystemConfig, toolkit: Toolkit) {
     this.config = config;
     this.logger = createLogger(config);
-    this.planner = new Planner(config);
     this.toolkit = toolkit;
 
-    // Initialize Replanner with available tools
-    const availableTools: ToolSpec[] = toolkit.list();
-    this.replanner = new Replanner(this.logger, availableTools);
+    // Get tool runtime if available
+    this.toolRuntime = toolkit.getRuntime() ?? null;
+
+    // Get available tools
+    const toolSpecs = toolkit.list();
+    const toolIds = toolSpecs.map((t) => t.id);
+
+    // Initialize Planner with available tool IDs
+    this.planner = new Planner(config, toolIds);
+
+    // Initialize Replanner with available tool specs
+    this.replanner = new Replanner(this.logger, toolSpecs);
   }
 
   async execute(
@@ -263,12 +273,59 @@ export class Executor {
       throw new Error(`Tool not found: ${step.toolId}`);
     }
 
-    // Check approval
-    if (tool.requiresApproval) {
-      this.logger.info(`Tool ${step.toolId} requires approval`);
-      // TODO: Implement approval flow
-      throw new Error("Approval required but not implemented");
+    // Use ToolRuntime if available (supports approval flow)
+    if (this.toolRuntime) {
+      this.logger.debug(`Executing tool via ToolRuntime: ${step.toolId}`);
+
+      const invokeResult = await this.toolRuntime.invoke(
+        step.toolId,
+        sessionId,
+        step.input ?? {},
+        agentId,
+        userId
+      );
+
+      // Check if approval is required
+      if (invokeResult.awaitingApproval) {
+        this.logger.info(`Tool ${step.toolId} requires approval, awaiting user response`);
+
+        // Return a special message indicating approval is needed
+        return {
+          type: "thought",
+          content: `Tool '${step.toolId}' requires approval. Waiting for user response...`,
+          timestamp: Date.now(),
+          metadata: {
+            stepId: step.id,
+            toolId: step.toolId,
+            invocationId: invokeResult.invocationId,
+            awaitingApproval: true,
+          },
+        };
+      }
+
+      // Check for execution result
+      if (invokeResult.result) {
+        if (!invokeResult.result.ok) {
+          throw new Error(invokeResult.result.error?.message ?? "Tool execution failed");
+        }
+
+        return {
+          type: "tool",
+          content: `Executed tool: ${step.toolId}`,
+          timestamp: Date.now(),
+          metadata: {
+            stepId: step.id,
+            toolId: step.toolId,
+            result: invokeResult.result.data,
+          },
+        };
+      }
+
+      return null;
     }
+
+    // Fallback: Direct tool execution (no approval support)
+    this.logger.debug(`Executing tool directly: ${step.toolId} (no ToolRuntime)`);
 
     const context: ToolContext = {
       sessionId,

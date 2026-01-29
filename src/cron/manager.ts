@@ -2,16 +2,34 @@
 
 import { createLogger, type Logger } from "../utils/logger.js";
 import type { SystemConfig, CronJob, ChatMessage } from "../types/index.js";
+import type { TaskOrchestrator } from "../orchestrator/TaskOrchestrator.js";
 
 export class CronManager {
   private config: SystemConfig;
   private logger: Logger;
   private jobs = new Map<string, CronJob>();
   private intervals = new Map<string, NodeJS.Timeout>();
+  private orchestrator: TaskOrchestrator | null = null;
 
-  constructor(config: SystemConfig) {
+  constructor(config: SystemConfig, orchestrator?: TaskOrchestrator) {
     this.config = config;
     this.logger = createLogger(config);
+    this.orchestrator = orchestrator ?? null;
+  }
+
+  /**
+   * Set the TaskOrchestrator instance (for dependency injection).
+   */
+  setOrchestrator(orchestrator: TaskOrchestrator): void {
+    this.orchestrator = orchestrator;
+    this.logger.info("TaskOrchestrator set for CronManager");
+  }
+
+  /**
+   * Get the TaskOrchestrator instance.
+   */
+  getOrchestrator(): TaskOrchestrator | null {
+    return this.orchestrator;
   }
 
   add(job: CronJob): void {
@@ -101,9 +119,39 @@ export class CronManager {
   private async executeJob(job: CronJob): Promise<void> {
     this.logger.info(`Executing cron job: ${job.id}`);
 
-    // TODO: Send task to agent
-    // For now, just log
-    this.logger.info(`Cron task: ${job.task.text}`);
+    if (!this.orchestrator) {
+      this.logger.warn(`TaskOrchestrator not available, cron task not executed: ${job.id}`);
+      this.logger.info(`Cron task (not executed): ${job.task.text}`);
+      return;
+    }
+
+    try {
+      // Create channel session ID for cron jobs
+      const channelSessionId = `cron:${job.id}`;
+
+      // Ensure task has required fields
+      const taskMessage: ChatMessage = {
+        ...job.task,
+        agentId: job.task.agentId || this.config.agents[0]?.id || "default",
+        channelId: job.task.channelId || "cron",
+        userId: job.task.userId || "cron-system",
+      };
+
+      // Create task via orchestrator
+      const result = this.orchestrator.createTask({
+        message: taskMessage,
+        channelSessionId,
+      });
+
+      this.logger.info(`Cron task created: ${result.taskId}`, {
+        cronJobId: job.id,
+        state: result.state,
+      });
+    } catch (error) {
+      this.logger.error(`Failed to execute cron job: ${job.id}`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   list(): CronJob[] {

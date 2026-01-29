@@ -39,6 +39,13 @@
 {"type":"entity","name":"moonbot::Type::ApprovalResolvedEvent","entityType":"type","observations":["승인 결과 이벤트 타입 (src/orchestrator/types.ts)","필드: taskId (string), channelId (string), approved (boolean), requestId (string)","TaskOrchestrator에서 승인/거부 결정 후 방출","Gateway Server를 통해 클라이언트로 'approval.resolved' notification 브로드캐스트"]}
 {"type":"entity","name":"moonbot::Pattern::ApprovalFlow","entityType":"pattern","observations":["승인 흐름 패턴: Task PAUSED -> 승인 요청 -> 승인/거부 -> Task 상태 변경","TaskOrchestrator.grantApproval(taskId, approved): PAUSED 상태 태스크 승인/거부","TaskOrchestrator.getPendingApprovals(): 대기 중 승인 목록 반환","TaskOrchestrator.onApprovalRequest(callback): 승인 요청 이벤트 리스너 등록","TaskOrchestrator.onApprovalResolved(callback): 승인 완료 이벤트 리스너 등록","Gateway Server RPC handlers: approval.grant (승인/거부), approval.list (대기 목록 조회)","이벤트 방출: emitApprovalRequest(), emitApprovalResolved()"]}
 {"type":"entity","name":"moonbot::Convention::Testing","entityType":"convention","observations":["Vitest 프레임워크 사용","*.test.ts 파일은 tsconfig.json에서 exclude로 빌드 제외","테스트 명령어: pnpm test (watch), pnpm test:run (단번), pnpm test:coverage (커버리지)","describe-it 패턴 사용, 한글 테스트 설명 허용"]}
+{"type":"entity","name":"moonbot::Component::LLMClient","entityType":"component","observations":["OpenAI gpt-4o 연동을 위한 클라이언트 (src/llm/LLMClient.ts)","generatePlan() 메서드로 LLM을 호출하여 Step 배열 생성","fallback 기능 제공: LLM unavailable 시 keyword-based planning","환경 변수 OPENAI_API_KEY 필요"]}
+{"type":"entity","name":"moonbot::Component::Planner","entityType":"component","observations":["LLM 연동 완료: LLMClient 사용하여 Step 생성","availableTools를 생성자에서 받아 LLM 프롬프트에 포함","keyword fallback: LLM unavailable 시 기존 키워드 매칭 로직 사용"]}
+{"type":"entity","name":"moonbot::Component::Executor","entityType":"component","observations":["ToolRuntime.invoke() 사용하여 도구 실행","awaitingApproval 반환 시 approval flow 지원","toolRuntime 프로퍼티 추가 (Toolkit에서 가져옴)"]}
+{"type":"entity","name":"moonbot::Component::CronManager","entityType":"component","observations":["TaskOrchestrator 의존성 주입 지원","executeJob()에서 TaskOrchestrator.createTask() 호출","cron専用 channelSessionId 생성 (cron:{jobId})"]}
+{"type":"entity","name":"moonbot::Component::DiscordAdapter","entityType":"component","observations":["sendEmbed() 메서드 추가: Discord Embed 메시지 전송","editMessage() 메서드 추가: 기존 메시지 수정","승인 요청/업데이트에 Embed 사용"]}
+{"type":"entity","name":"moonbot::Component::CommandSanitizer","entityType":"component","observations":["새 허용 명령어: make, cmake, tar, zip, unzip","보안 검토 완료: build tools과 archive tools만 추가","docker, kubectl 제외: 컨테이너 조작 위험"]}
+{"type":"entity","name":"moonbot::Integration::OpenAI","entityType":"integration","observations":["gpt-4o 모델 사용","temperature 0.7, maxTokens 2000","시스템 프롬프트에 도구 목록 포함","JSON 형식으로 Step 배열 반환"]}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Channels","relationType":"manages"}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Agents","relationType":"orchestrates"}
 {"type":"relation","from":"moonbot::Component::Agents","to":"moonbot::Component::Tools","relationType":"uses"}
@@ -76,3 +83,7 @@
 {"type":"relation","from":"moonbot::TestingFramework::Vitest","to":"moonbot::Component::TaskOrchestrator","relationType":"tests"}
 {"type":"relation","from":"moonbot::TestingFramework::Vitest","to":"moonbot::Component::PerChannelQueue","relationType":"tests"}
 {"type":"relation","from":"moonbot::Component::GatewayServer","to":"moonbot::Component::TaskOrchestrator","relationType":"orchestrates_approval_events"}
+{"type":"relation","from":"moonbot::Component::Planner","to":"moonbot::Component::LLMClient","relationType":"uses"}
+{"type":"relation","from":"moonbot::Component::Planner","to":"moonbot::Integration::OpenAI","relationType":"integrates"}
+{"type":"relation","from":"moonbot::Component::Executor","to":"moonbot::Component::DiscordAdapter","relationType":"sends_approval_to"}
+{"type":"relation","from":"moonbot::Component::CronManager","to":"moonbot::Component::TaskOrchestrator","relationType":"delegates_to"}

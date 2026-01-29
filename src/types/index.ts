@@ -284,3 +284,17 @@ export interface TaskEvent {
   newState: TaskState;
   timestamp: number;
 }
+
+/**
+ * LLM configuration for the system.
+ */
+export interface LLMConfig {
+  /** OpenAI API key (overrides OPENAI_API_KEY env var) */
+  apiKey?: string;
+  /** Model to use for planning (default: gpt-4o) */
+  model?: string;
+  /** Temperature for LLM responses (0.0-2.0, default: 0.7) */
+  temperature?: number;
+  /** Maximum tokens in LLM response (default: 2000) */
+  maxTokens?: number;
+}
