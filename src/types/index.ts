@@ -66,9 +66,14 @@ export interface AgentConfig {
 }
 
 export interface ChannelConfig {
+  id: string;
   type: "discord" | "slack" | "telegram" | "cli";
+  name?: string;
   token?: string;
+  webhookUrl?: string;
   enabled: boolean;
+  addedAt?: string;
+  lastUpdated?: string;
 }
 
 export interface ToolConfig {

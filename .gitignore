@@ -11,3 +11,7 @@ dist/
 .claude/docs/tasks/*/context.md
 .claude/analysisContext.yaml
 .claude.backup-*
+.claude/docs/agreements/agreement.md
+.claude/docs/tasks/*/flow-report.md
+.gitignore
+.claude/docs/tasks/

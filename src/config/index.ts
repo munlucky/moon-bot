@@ -12,25 +12,66 @@ export function loadConfig(configPath?: string): SystemConfig {
   const filePath = configPath || DEFAULT_CONFIG_PATH;
 
   if (!fs.existsSync(filePath)) {
-    return getDefaultConfig();
+    const defaults = getDefaultConfig();
+    return applyEnvironmentVariables(defaults);
   }
 
   try {
     const content = fs.readFileSync(filePath, "utf-8");
     const config = JSON.parse(content) as SystemConfig;
-    return mergeWithDefaults(config);
+    const merged = mergeWithDefaults(config);
+    return applyEnvironmentVariables(merged);
   } catch (error) {
     console.warn(`Failed to load config from ${filePath}, using defaults`);
-    return getDefaultConfig();
+    const defaults = getDefaultConfig();
+    return applyEnvironmentVariables(defaults);
   }
+}
+
+/**
+ * Apply environment variables to config
+ * Priority: env > config.json > defaults
+ */
+function applyEnvironmentVariables(config: SystemConfig): SystemConfig {
+  const result = { ...config };
+
+  // Discord token
+  if (process.env.MOONBOT_DISCORD_TOKEN) {
+    const discordChannel = result.channels.find(c => c.type === "discord");
+    if (discordChannel) {
+      discordChannel.token = process.env.MOONBOT_DISCORD_TOKEN;
+    } else {
+      result.channels.push({
+        id: "discord-from-env",
+        type: "discord",
+        token: process.env.MOONBOT_DISCORD_TOKEN,
+        enabled: true
+      });
+    }
+  }
+
+  // Gateway port
+  if (process.env.MOONBOT_GATEWAY_PORT) {
+    const port = parseInt(process.env.MOONBOT_GATEWAY_PORT, 10);
+    if (!isNaN(port) && result.gateways[0]) {
+      result.gateways[0].port = port;
+    }
+  }
+
+  // Gateway host
+  if (process.env.MOONBOT_GATEWAY_HOST && result.gateways[0]) {
+    result.gateways[0].host = process.env.MOONBOT_GATEWAY_HOST;
+  }
+
+  return result;
 }
 
 function getDefaultConfig(): SystemConfig {
   return {
     gateways: [
       {
-        port: 18789,
-        host: "127.0.0.1",
+        port: parseInt(process.env.MOONBOT_GATEWAY_PORT || "18789", 10),
+        host: process.env.MOONBOT_GATEWAY_HOST || "127.0.0.1",
       },
     ],
     agents: [

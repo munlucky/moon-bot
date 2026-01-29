@@ -12,6 +12,12 @@
 {"type":"entity","name":"moonbot::Convention::ToolRegistration","entityType":"convention","observations":["toolkit.register({ id, schema, run }) 인터페이스","TypeBox 사용한 스키마 정의","requiresApproval 옵션으로 승인 필요 도구 지정","평탄화된 구조 권장"]}
 {"type":"entity","name":"moonbot::Convention::Naming","entityType":"convention","observations":["컴포넌트 파일: PascalCase (예: BrowserTool.ts)","타입 정의: 인터페이스/타입 분리","CLI 명령: kebab-case (예: gateway status)"]}
 {"type":"entity","name":"moonbot","entityType":"project","observations":["Local-first AI Agent System","Moltbot 프레임워크 기반","TypeScript (ESM), Node.js 22+","WebSocket JSON-RPC (포트 18789)","멀티 서피스 채널 (Discord 등)","CLI: moonbot","PRD: local_ai_agent_prd.md","Spec: agent_system_spec.md","README.md 문서 추가 (프로젝트 개요, 설치, 빠른 시작 가이드)"]}
+{"type":"entity","name":"moonbot::Component::ChannelCommand","entityType":"component","observations":["CLI 채널 관리 명령어 (add, remove, list, enable, disable)","위치: src/cli/commands/channel.ts","RPC 클라이언트를 통해 Gateway와 통신","토큰 마스킹 기능 적용 (maskToken)","에러 핸들링: ECONNREFUSED, not found, already exists"]}
+{"type":"entity","name":"moonbot::Component::ConfigManager","entityType":"component","observations":["설정 관리자 모듈","위치: src/config/manager.ts","기능: loadConfigAsync, saveConfig, addChannel, removeChannel, updateChannel","환경 변수 우선순위: env > config.json > defaults","자동 백업 (최대 10개 보관)","토큰 마스킹 함수 제공"]}
+{"type":"entity","name":"moonbot::Component::ChannelHandler","entityType":"component","observations":["Gateway RPC 채널 핸들러","위치: src/gateway/handlers/channel.handler.ts","메서드: list, add, remove, enable, disable, get","ConfigManager를 통해 설정 파일 CRUD"]}
+{"type":"entity","name":"moonbot::API::EnvironmentVariables","entityType":"api","observations":["지원 변수: MOONBOT_DISCORD_TOKEN, MOONBOT_GATEWAY_PORT, MOONBOT_GATEWAY_HOST","우선순위: 환경 변수 > config.json > 기본값","Discord 토큰이 있으면 자동으로 discord 채널 생성/업�데이트"]}
+{"type":"entity","name":"moonbot::Convention::TokenMasking","entityType":"convention","observations":["보안을 위해 모든 토큰 출력 시 마스킹 적용","형식: 앞 6자리 + ... + 뒤 4자리","함수: maskToken() in src/config/manager.ts","적용 위치: channel list, channel add 출력"]}
+{"type":"entity","name":"moonbot::Convention::EnvVarNaming","entityType":"convention","observations":["환경 변수 네이밍: MOONBOT_<SECTION>_<KEY>","예: MOONBOT_DISCORD_TOKEN, MOONBOT_GATEWAY_PORT","섹션: DISCORD, GATEWAY, STORAGE 등"]}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Channels","relationType":"manages"}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Agents","relationType":"orchestrates"}
 {"type":"relation","from":"moonbot::Component::Agents","to":"moonbot::Component::Tools","relationType":"uses"}
@@ -19,3 +25,8 @@
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Auth","relationType":"uses"}
 {"type":"relation","from":"moonbot::Component::Channels","to":"moonbot::Component::Auth","relationType":"uses"}
 {"type":"relation","from":"moonbot::Component::CLI","to":"moonbot::Component::Gateway","relationType":"communicates"}
+{"type":"relation","from":"moonbot::Component::ChannelCommand","to":"moonbot::Component::ChannelHandler","relationType":"calls"}
+{"type":"relation","from":"moonbot::Component::ChannelHandler","to":"moonbot::Component::ConfigManager","relationType":"uses"}
+{"type":"relation","from":"moonbot::Component::ConfigManager","to":"moonbot::API::EnvironmentVariables","relationType":"loads"}
+{"type":"relation","from":"moonbot::Component::ChannelCommand","to":"moonbot::Convention::TokenMasking","relationType":"follows"}
+{"type":"relation","from":"moonbot::Component::ConfigManager","to":"moonbot::Convention::TokenMasking","relationType":"implements"}

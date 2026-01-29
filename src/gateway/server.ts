@@ -8,6 +8,8 @@ import { createLogger, type Logger } from "../utils/logger.js";
 import { ErrorSanitizer } from "../utils/error-sanitizer.js";
 import { ToolRuntime } from "../tools/runtime/ToolRuntime.js";
 import { createToolHandlers } from "./handlers/tools.handler.js";
+import { createChannelHandlers } from "./handlers/channel.handler.js";
+import { saveConfig } from "../config/manager.js";
 
 /**
  * Rate limiter to prevent connection flooding.
@@ -154,6 +156,16 @@ export class GatewayServer {
       const toolHandlers = createToolHandlers(this.toolRuntime, this.config);
       this.rpc.registerBatch(toolHandlers);
     }
+
+    // Register channel handlers
+    const channelHandlers = createChannelHandlers(this.config, (newConfig) => {
+      this.config = newConfig;
+      // Save config to file when updated via RPC
+      saveConfig(newConfig).catch(error => {
+        this.logger.error("Failed to save config", { error });
+      });
+    });
+    this.rpc.registerBatch(channelHandlers);
 
     // connect: Handshake and client registration
     this.rpc.register("connect", async (params) => {

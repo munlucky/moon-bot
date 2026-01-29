@@ -37,6 +37,15 @@ import {
   approvalsDeny,
 } from "./commands/approvals.js";
 
+// Channel commands
+import {
+  channelList,
+  channelAdd,
+  channelRemove,
+  channelEnable,
+  channelDisable,
+} from "./commands/channel.js";
+
 /** Helper to get CLI options from a command */
 function getCliOptions(command: Command): CliOptions {
   const opts = command.opts();
@@ -178,6 +187,53 @@ export function createCli(): Command {
     .action(async (id) => {
       const options = getCliOptions(approvalsCmd);
       await approvalsDeny(id, options);
+    });
+
+  // Channel commands
+  const channelCmd = program.command("channel")
+    .description("Channel management");
+
+  channelCmd.command("list")
+    .description("List all channels")
+    .action(async () => {
+      const options = getCliOptions(channelCmd);
+      await channelList(options);
+    });
+
+  channelCmd.command("add")
+    .description("Add a new channel")
+    .argument("<id>", "Channel ID")
+    .option("--type <type>", "Channel type (discord, slack, telegram, cli)")
+    .option("--token <token>", "Channel authentication token")
+    .option("--name <name>", "Channel display name")
+    .option("--no-enable", "Add channel in disabled state")
+    .action(async (id, options) => {
+      const cliOptions = getCliOptions(channelCmd);
+      await channelAdd(id, { ...cliOptions, ...options });
+    });
+
+  channelCmd.command("remove")
+    .description("Remove a channel")
+    .argument("<id>", "Channel ID to remove")
+    .action(async (id) => {
+      const options = getCliOptions(channelCmd);
+      await channelRemove(id, options);
+    });
+
+  channelCmd.command("enable")
+    .description("Enable a channel")
+    .argument("<id>", "Channel ID to enable")
+    .action(async (id) => {
+      const options = getCliOptions(channelCmd);
+      await channelEnable(id, options);
+    });
+
+  channelCmd.command("disable")
+    .description("Disable a channel")
+    .argument("<id>", "Channel ID to disable")
+    .action(async (id) => {
+      const options = getCliOptions(channelCmd);
+      await channelDisable(id, options);
     });
 
   return program;
