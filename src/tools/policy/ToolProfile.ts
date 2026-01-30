@@ -34,7 +34,11 @@ export const TOOL_PROFILES: Record<ToolProfile, Set<string>> = {
     "process.poll",
     "process.log",
     "process.kill",
-    "process.list"
+    "process.list",
+    "claude_code.start",
+    "claude_code.write",
+    "claude_code.poll",
+    "claude_code.stop"
   ]),
 
   full: new Set(["*"])
