@@ -28,7 +28,13 @@ export const TOOL_PROFILES: Record<ToolProfile, Set<string>> = {
     "system.run",
     "system.runRaw",
     "http.request",
-    "http.download"
+    "http.download",
+    "process.exec",
+    "process.write",
+    "process.poll",
+    "process.log",
+    "process.kill",
+    "process.list"
   ]),
 
   full: new Set(["*"])

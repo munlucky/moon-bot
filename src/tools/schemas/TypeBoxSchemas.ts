@@ -411,6 +411,177 @@ export const BrowserExtractResultSchema = Type.Object({
 export type BrowserExtractResult = Static<typeof BrowserExtractResultSchema>;
 
 // ============================================================================
+// Process Schemas
+// ============================================================================
+
+/**
+ * Process session status
+ */
+export const ProcessStatusSchema = Type.Union([
+  Type.Literal("running"),
+  Type.Literal("exited"),
+  Type.Literal("killed"),
+]);
+
+export type ProcessStatus = Static<typeof ProcessStatusSchema>;
+
+/**
+ * Input schema for process.exec tool
+ */
+export const ProcessExecInputSchema = Type.Object({
+  argv: Type.Union([Type.String(), Type.Array(Type.String())], {
+    description: "Command and arguments to execute",
+  }),
+  cwd: Type.Optional(Type.String({ description: "Working directory" })),
+  env: Type.Optional(Type.Record(Type.String(), Type.String())),
+  background: Type.Optional(
+    Type.Boolean({ default: false, description: "Run in background mode" })
+  ),
+  pty: Type.Optional(
+    Type.Boolean({ default: false, description: "Use PTY for terminal emulation" })
+  ),
+  timeoutMs: Type.Optional(
+    Type.Integer({ minimum: 1, maximum: 3600000, description: "Timeout in ms (max 1 hour)" })
+  ),
+});
+
+export type ProcessExecInput = Static<typeof ProcessExecInputSchema>;
+
+/**
+ * Output schema for process.exec tool
+ */
+export const ProcessExecResultSchema = Type.Object({
+  sessionId: Type.String(),
+  pid: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+  status: ProcessStatusSchema,
+});
+
+export type ProcessExecResult = Static<typeof ProcessExecResultSchema>;
+
+/**
+ * Input schema for process.write tool
+ */
+export const ProcessWriteInputSchema = Type.Object({
+  sessionId: Type.String({ description: "Session ID to write to" }),
+  input: Type.String({ description: "Input string to send (include \\n for newline)" }),
+});
+
+export type ProcessWriteInput = Static<typeof ProcessWriteInputSchema>;
+
+/**
+ * Output schema for process.write tool
+ */
+export const ProcessWriteResultSchema = Type.Object({
+  success: Type.Boolean(),
+  bytesWritten: Type.Integer({ minimum: 0 }),
+});
+
+export type ProcessWriteResult = Static<typeof ProcessWriteResultSchema>;
+
+/**
+ * Input schema for process.poll tool
+ */
+export const ProcessPollInputSchema = Type.Object({
+  sessionId: Type.String({ description: "Session ID to poll" }),
+  maxLines: Type.Optional(
+    Type.Integer({ minimum: 1, maximum: 1000, default: 100 })
+  ),
+});
+
+export type ProcessPollInput = Static<typeof ProcessPollInputSchema>;
+
+/**
+ * Output schema for process.poll tool
+ */
+export const ProcessPollResultSchema = Type.Object({
+  lines: Type.Array(Type.String()),
+  hasMore: Type.Boolean(),
+  status: ProcessStatusSchema,
+  exitCode: Type.Union([Type.Integer(), Type.Null()]),
+});
+
+export type ProcessPollResult = Static<typeof ProcessPollResultSchema>;
+
+/**
+ * Input schema for process.log tool
+ */
+export const ProcessLogInputSchema = Type.Object({
+  sessionId: Type.String({ description: "Session ID to get full log" }),
+});
+
+export type ProcessLogInput = Static<typeof ProcessLogInputSchema>;
+
+/**
+ * Output schema for process.log tool
+ */
+export const ProcessLogResultSchema = Type.Object({
+  log: Type.String(),
+  totalLines: Type.Integer({ minimum: 0 }),
+  status: ProcessStatusSchema,
+  exitCode: Type.Union([Type.Integer(), Type.Null()]),
+});
+
+export type ProcessLogResult = Static<typeof ProcessLogResultSchema>;
+
+/**
+ * Input schema for process.kill tool
+ */
+export const ProcessKillInputSchema = Type.Object({
+  sessionId: Type.String({ description: "Session ID to kill" }),
+  signal: Type.Optional(
+    Type.Union([Type.Literal("SIGTERM"), Type.Literal("SIGKILL"), Type.Literal("SIGINT")], {
+      default: "SIGTERM",
+    })
+  ),
+});
+
+export type ProcessKillInput = Static<typeof ProcessKillInputSchema>;
+
+/**
+ * Output schema for process.kill tool
+ */
+export const ProcessKillResultSchema = Type.Object({
+  success: Type.Boolean(),
+  message: Type.String(),
+});
+
+export type ProcessKillResult = Static<typeof ProcessKillResultSchema>;
+
+/**
+ * Input schema for process.list tool
+ */
+export const ProcessListInputSchema = Type.Object({
+  userId: Type.Optional(Type.String({ description: "Filter by user ID" })),
+});
+
+export type ProcessListInput = Static<typeof ProcessListInputSchema>;
+
+/**
+ * Process session info for list response
+ */
+export const ProcessSessionInfoSchema = Type.Object({
+  id: Type.String(),
+  command: Type.Array(Type.String()),
+  status: ProcessStatusSchema,
+  pid: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+  createdAt: Type.Integer(),
+  lastActivityAt: Type.Integer(),
+  pty: Type.Boolean(),
+});
+
+export type ProcessSessionInfo = Static<typeof ProcessSessionInfoSchema>;
+
+/**
+ * Output schema for process.list tool
+ */
+export const ProcessListResultSchema = Type.Object({
+  sessions: Type.Array(ProcessSessionInfoSchema),
+  count: Type.Integer({ minimum: 0 }),
+});
+
+export type ProcessListResult = Static<typeof ProcessListResultSchema>;
+
+// ============================================================================
 // Utility Functions
 // ============================================================================
 

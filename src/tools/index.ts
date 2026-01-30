@@ -26,6 +26,10 @@ import { createSystemRunTool, createSystemRunRawTool } from "./desktop/SystemRun
 // Browser Tools
 import { BrowserTool, createBrowserTools } from "./browser/BrowserTool.js";
 
+// Process Tools
+import { ProcessSessionManager } from "./process/ProcessSessionManager.js";
+import { createProcessTools } from "./process/ProcessTool.js";
+
 export class Toolkit {
   private tools = new Map<string, ToolSpec>();
   private logger: Logger;
@@ -190,6 +194,28 @@ export async function createGatewayTools(
     // Store browser tool reference for cleanup
     (toolkit as any).browserTool = browserTool;
   }
+
+  // Process tools (for interactive terminal sessions)
+  const processSessionManager = new ProcessSessionManager({
+    maxOutputLines: 1000,
+    maxLogSize: 10 * 1024 * 1024, // 10MB
+    idleTimeoutMs: 30 * 60 * 1000, // 30 minutes
+    maxSessionsPerUser: 3,
+  });
+
+  candidateTools.push(
+    ...createProcessTools(processSessionManager, approvalManager)
+  );
+
+  // Store process session manager reference for cleanup
+  (toolkit as any).processSessionManager = processSessionManager;
+
+  // Set up periodic session cleanup
+  setInterval(() => {
+    processSessionManager.cleanupExpired().catch(() => {
+      // Ignore cleanup errors
+    });
+  }, 5 * 60 * 1000); // Every 5 minutes
 
   // Filter tools by profile and register
   const filteredTools = filterToolsByProfile(candidateTools, profile);

@@ -73,6 +73,14 @@
 {"type":"entity","name":"moonbot::Tool::BrowserTool","entityType":"component","observations":["위치: src/tools/browser/BrowserTool.ts","툴: browser.start, browser.goto, browser.snapshot, browser.act, browser.screenshot, browser.extract, browser.close","세션 관리: SessionManager로 병렬 실행 제어 (최대 5개)","보안: HTTPS만 허용, file:// 프로토콜 차단","프레임워크: Playwright (Chromium)","TypeBox 스키마 적용 완료 (2026-01-30)","ToolResultBuilder 적용 완료 (2026-01-30)"]}
 {"type":"entity","name":"moonbot::Convention::ToolExposure","entityType":"convention","observations":["도구 정보는 두 채널로 전달: (1) 시스템 프롬프트 텍스트, (2) 도구 스키마","응답용 프롬프트에도 도구 목록 포함 (몰트봇 패턴)","사용자가 '어떤 도구가 있냐'고 물으면 LLM이 자체적으로 도구 목록 안내","buildResponseSystemPrompt()에서 toolDefinitions 파라미터로 도구 정의 수용"]}
 {"type":"entity","name":"moonbot::Pattern::MoltbotToolIntegration","entityType":"pattern","observations":["몰트봇 패턴: 시스템 프롬프트에 '## Available Tools' 섹션 포함","각 도구의 이름, 설명, 매개변수를 인간이 읽을 수 있는 형태로 포함","도구 스키마를 구조화된 형태로 API에 전달","모델은 '어떤 도구가 존재하는지'와 '어떻게 호출해야 하는지'를 동시에 이해"]}
+{"type":"entity","name":"[moonbot]::Boundary::AlwaysDo","entityType":"boundary","observations":["커밋 전 pnpm build 실행하여 타입 체크","새 도구 추가 시 ToolProfile.ts에 등록","TypeBox 스키마 사용하여 입출력 타입 정의"]}
+{"type":"entity","name":"[moonbot]::Boundary::AskFirst","entityType":"boundary","observations":["새 외부 의존성 추가","process.exec 같은 위험한 명령어 실행 도구","시스템 리소스 제한 변경 (세션 수, 버퍼 크기 등)"]}
+{"type":"entity","name":"[moonbot]::Boundary::NeverDo","entityType":"boundary","observations":[".env 파일 커밋","승인 없이 system.runRaw 사용","사용자 세션 격리 우회"]}
+{"type":"entity","name":"[moonbot]::Component::ProcessTool","entityType":"component","observations":["터미널 프로세스 관리 도구 (6개: exec, write, poll, log, kill, list)","process.exec만 승인 필요, 나머지는 세션 내 작업","userId 기반 세션 격리로 보안 확보","파일: src/tools/process/ProcessTool.ts"]}
+{"type":"entity","name":"[moonbot]::Component::ProcessSessionManager","entityType":"component","observations":["프로세스 세션 라이프사이클 관리","사용자당 최대 3개 세션 제한","출력 버퍼 10MB, 유휴 타임아웃 30분","파일: src/tools/process/ProcessSessionManager.ts"]}
+{"type":"entity","name":"[moonbot]::Component::PtyWrapper","entityType":"component","observations":["node-pty 동적 로딩 + child_process fallback","WrappedProcess 통합 인터페이스 제공","optional dependency로 설치 실패해도 동작","파일: src/tools/process/PtyWrapper.ts"]}
+{"type":"entity","name":"[moonbot]::Convention::ToolPattern","entityType":"convention","observations":["createXxxTool(deps): ToolSpec<Input, Output> 팩토리 함수 패턴","ToolResultBuilder.success() / failureWithDuration() 사용","ApprovalManager.checkApproval() + CommandSanitizer.sanitize() 보안 검증"]}
+{"type":"entity","name":"[moonbot]::Convention::SessionManagerPattern","entityType":"convention","observations":["Map<string, Session>으로 세션 저장","cleanupExpired() 메서드로 주기적 정리","lastActivityAt 필드로 유휴 시간 추적"]}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Channels","relationType":"manages"}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Agents","relationType":"orchestrates"}
 {"type":"relation","from":"moonbot::Component::Agents","to":"moonbot::Component::Tools","relationType":"uses"}
@@ -127,3 +135,5 @@
 {"type":"relation","from":"moonbot::Convention::ToolExposure","to":"moonbot::Component::LLMClient","relationType":"implemented_by"}
 {"type":"relation","from":"moonbot::Pattern::MoltbotToolIntegration","to":"moonbot::Convention::ToolExposure","relationType":"defines"}
 {"type":"relation","from":"moonbot::Component::Executor","to":"moonbot::Convention::ToolExposure","relationType":"follows"}
+{"type":"relation","from":"[moonbot]::Component::ProcessTool","to":"[moonbot]::Component::ProcessSessionManager","relationType":"uses"}
+{"type":"relation","from":"[moonbot]::Component::ProcessSessionManager","to":"[moonbot]::Component::PtyWrapper","relationType":"uses"}
