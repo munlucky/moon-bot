@@ -1,0 +1,25 @@
+phase: planning
+decisions:
+  skillChain:
+    - pre-flight-check
+    - requirements-analyzer
+    - context-builder
+    - codex-validate-plan
+    - project-memory-check
+    - implementation-runner
+    - completion-verifier
+    - codex-review-code
+    - efficiency-tracker
+    - session-logger
+  parallelGroups: []
+  recommendedAgents:
+    - requirements-analyzer
+    - context-builder
+artifacts:
+  contextDocPath: .claude/docs/tasks/moonbot-nodes-tool/context.md
+  verificationScript: .claude/agents/verification/verify-changes.sh
+notes:
+  - "사용자가 스펙 확인 및 계획 진행 의사 표현"
+  - "Node Companion 앱 이번에 개발 결정 (userAnswers.nodeCompanionApp)"
+  - "requirementsClear=true, apiSpecConfirmed=true"
+  - "hasContextMd=false로 planning phase 시작"

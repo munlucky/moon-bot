@@ -711,6 +711,119 @@ export const ClaudeCodePollResultSchema = Type.Object({
 export type ClaudeCodePollResult = Static<typeof ClaudeCodePollResultSchema>;
 
 // ============================================================================
+// Nodes Schemas
+// ============================================================================
+
+/**
+ * Node connection status
+ */
+export const NodeConnectionStatusSchema = Type.Union([
+  Type.Literal("paired"),
+  Type.Literal("pending"),
+  Type.Literal("offline"),
+  Type.Literal("expired"),
+]);
+
+export type NodeConnectionStatus = Static<typeof NodeConnectionStatusSchema>;
+
+/**
+ * Node information
+ */
+export const NodeInfoSchema = Type.Object({
+  nodeId: Type.String(),
+  nodeName: Type.String(),
+  status: NodeConnectionStatusSchema,
+  lastSeen: Type.Integer(),
+  platform: Type.Optional(Type.String()),
+});
+
+export type NodeInfo = Static<typeof NodeInfoSchema>;
+
+/**
+ * Status request
+ */
+export const NodesStatusRequestSchema = Type.Object({
+  userId: Type.Optional(Type.String()),
+});
+
+export type NodesStatusRequest = Static<typeof NodesStatusRequestSchema>;
+
+/**
+ * Status response
+ */
+export const NodesStatusResponseSchema = Type.Object({
+  nodes: Type.Array(NodeInfoSchema),
+  count: Type.Integer(),
+});
+
+export type NodesStatusResponse = Static<typeof NodesStatusResponseSchema>;
+
+/**
+ * Run command request
+ */
+export const NodesRunRequestSchema = Type.Object({
+  nodeId: Type.String(),
+  argv: Type.Union([Type.String(), Type.Array(Type.String())]),
+  cwd: Type.Optional(Type.String()),
+  env: Type.Optional(Type.Record(Type.String(), Type.String())),
+  timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 300000 })),
+});
+
+export type NodesRunRequest = Static<typeof NodesRunRequestSchema>;
+
+/**
+ * Run command response
+ */
+export const NodesRunResponseSchema = Type.Object({
+  success: Type.Boolean(),
+  exitCode: Type.Union([Type.Integer(), Type.Null()]),
+  stdout: Type.String(),
+  stderr: Type.String(),
+});
+
+export type NodesRunResponse = Static<typeof NodesRunResponseSchema>;
+
+/**
+ * Screen snap request
+ */
+export const NodesScreenSnapRequestSchema = Type.Object({
+  nodeId: Type.String(),
+});
+
+export type NodesScreenSnapRequest = Static<typeof NodesScreenSnapRequestSchema>;
+
+/**
+ * Screen snap response
+ */
+export const NodesScreenSnapResponseSchema = Type.Object({
+  success: Type.Boolean(),
+  imageData: Type.String(), // Base64-encoded PNG
+  format: Type.Literal("png"),
+});
+
+export type NodesScreenSnapResponse = Static<typeof NodesScreenSnapResponseSchema>;
+
+/**
+ * Pairing request (internal RPC)
+ */
+export const NodesPairRequestSchema = Type.Object({
+  code: Type.String(), // 8-char alphanumeric
+});
+
+export type NodesPairRequest = Static<typeof NodesPairRequestSchema>;
+
+/**
+ * Pairing response (internal RPC)
+ */
+export const NodesPairResponseSchema = Type.Object({
+  success: Type.Boolean(),
+  nodeId: Type.String(),
+  nodeName: Type.String(),
+});
+
+export type NodesPairResponse = Static<typeof NodesPairResponseSchema>;
+
+// ============================================================================
 // Utility Functions
 // ============================================================================
 

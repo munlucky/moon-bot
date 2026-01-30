@@ -33,6 +33,10 @@ import { createProcessTools } from "./process/ProcessTool.js";
 // Claude Code Tools
 import { ClaudeCodeSessionManager, createClaudeCodeTools } from "./claude-code/index.js";
 
+// Nodes Tools
+import { NodeSessionManager, NodeCommandValidator } from "./nodes/index.js";
+import { createNodesTools } from "./nodes/NodesTool.js";
+
 export class Toolkit {
   private tools = new Map<string, ToolSpec>();
   private logger: Logger;
@@ -210,9 +214,6 @@ export async function createGatewayTools(
     ...createProcessTools(processSessionManager, approvalManager)
   );
 
-  // Store process session manager reference for cleanup
-  (toolkit as any).processSessionManager = processSessionManager;
-
   // Claude Code tools (wraps ProcessSessionManager for Claude CLI sessions)
   const claudeCodeSessionManager = new ClaudeCodeSessionManager(
     processSessionManager,
@@ -226,9 +227,6 @@ export async function createGatewayTools(
     ...createClaudeCodeTools(claudeCodeSessionManager, approvalManager)
   );
 
-  // Store claude code session manager reference for cleanup
-  (toolkit as any).claudeCodeSessionManager = claudeCodeSessionManager;
-
   // Set up periodic session cleanup
   setInterval(() => {
     processSessionManager.cleanupExpired().catch(() => {
@@ -238,6 +236,35 @@ export async function createGatewayTools(
       // Ignore cleanup errors
     });
   }, 5 * 60 * 1000); // Every 5 minutes
+
+  // Nodes tools (for Node Companion integration)
+  const nodeSessionManager = new NodeSessionManager({
+    pairingCodeTtlMs: 5 * 60 * 1000, // 5 minutes
+    sessionTimeoutMs: 60 * 60 * 1000, // 1 hour
+    maxNodesPerUser: 5,
+  });
+
+  const nodeCommandValidator = new NodeCommandValidator({
+    maxOutputSize: 10 * 1024 * 1024, // 10MB
+    maxArgvLength: 10000,
+  });
+
+  candidateTools.push(
+    ...createNodesTools(nodeSessionManager, nodeCommandValidator)
+  );
+
+  // Store node session manager reference for cleanup
+  (toolkit as any).nodeSessionManager = nodeSessionManager;
+
+  // Set up periodic node session cleanup
+  setInterval(() => {
+    nodeSessionManager.cleanupExpired();
+  }, 5 * 60 * 1000); // Every 5 minutes
+
+  // Store session manager references for cleanup
+  (toolkit as any).processSessionManager = processSessionManager;
+  (toolkit as any).claudeCodeSessionManager = claudeCodeSessionManager;
+  (toolkit as any).nodeSessionManager = nodeSessionManager;
 
   // Filter tools by profile and register
   const filteredTools = filterToolsByProfile(candidateTools, profile);

@@ -9,6 +9,8 @@ import { ErrorSanitizer } from "../utils/error-sanitizer.js";
 import { ToolRuntime } from "../tools/runtime/ToolRuntime.js";
 import { createToolHandlers } from "./handlers/tools.handler.js";
 import { createChannelHandlers } from "./handlers/channel.handler.js";
+import { createNodesHandlers } from "./handlers/nodes.handler.js";
+import { NodeSessionManager, NodeCommandValidator } from "../tools/nodes/index.js";
 import { saveConfig } from "../config/manager.js";
 import { DiscordAdapter } from "../channels/discord.js";
 import { TaskOrchestrator } from "../orchestrator/index.js";
@@ -132,6 +134,15 @@ export class GatewayServer {
   private sessionManager: SessionManager | null = null;
   private executor: Executor | null = null;
   private orchestrator!: TaskOrchestrator; // Definitely assigned in initializeDependencies
+  private nodeSessionManager: NodeSessionManager;
+  private nodeCommandValidator: NodeCommandValidator;
+
+  // Request-response correlation for node RPC
+  private pendingRequests = new Map<string, {
+    resolve: (value: unknown) => void;
+    reject: (error: Error) => void;
+    timeout: NodeJS.Timeout;
+  }>();
 
   constructor(config: SystemConfig, workspaceRoot?: string) {
     this.config = config;
@@ -142,6 +153,17 @@ export class GatewayServer {
       60000, // 1 minute window
       10     // max 10 connections per minute per IP
     );
+
+    // Initialize node managers
+    this.nodeSessionManager = new NodeSessionManager({
+      pairingCodeTtlMs: 5 * 60 * 1000, // 5 minutes
+      sessionTimeoutMs: 60 * 60 * 1000, // 1 hour
+      maxNodesPerUser: 5,
+    });
+    this.nodeCommandValidator = new NodeCommandValidator({
+      maxOutputSize: 10 * 1024 * 1024, // 10MB
+      maxArgvLength: 10000,
+    });
 
     // Note: toolRuntime will be initialized from Toolkit in initializeDependencies()
     // This ensures all tools are registered and available
@@ -242,6 +264,15 @@ export class GatewayServer {
       });
     });
     this.rpc.registerBatch(channelHandlers);
+
+    // Register nodes handlers
+    const nodesHandlers = createNodesHandlers(
+      this.nodeSessionManager,
+      this.nodeCommandValidator,
+      this.config,
+      (nodeId, message) => this.sendToNode(nodeId, message)
+    );
+    this.rpc.registerBatch(nodesHandlers);
 
     // connect: Handshake and client registration
     this.rpc.register("connect", async (params) => {
@@ -478,6 +509,131 @@ export class GatewayServer {
    */
   getToolkit(): Toolkit | null {
     return this.toolkit;
+  }
+
+  /**
+   * Get the node session manager instance.
+   */
+  getNodeSessionManager(): NodeSessionManager {
+    return this.nodeSessionManager;
+  }
+
+  /**
+   * Send a message to a specific node (one-way, no response handling).
+   * @param nodeId - Node ID to send message to
+   * @param message - Message to send
+   * @returns true if sent successfully
+   */
+  sendToNode(nodeId: string, message: unknown): boolean {
+    const node = this.nodeSessionManager.getNode(nodeId);
+    if (!node) {
+      return false;
+    }
+
+    const socket = this.sockets.get(node.socketId);
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return false;
+    }
+
+    socket.send(JSON.stringify(message));
+    return true;
+  }
+
+  /**
+   * Send a message to a node and wait for response with correlation ID.
+   * @param nodeId - Node ID to send message to
+   * @param method - RPC method name
+   * @param params - RPC parameters
+   * @param options - Optional timeout configuration
+   * @returns Promise that resolves with response or rejects on timeout/error
+   */
+  async sendToNodeAndWait(
+    nodeId: string,
+    method: string,
+    params: unknown,
+    options: { timeoutMs?: number } = {}
+  ): Promise<unknown> {
+    // Generate correlation ID
+    const correlationId = crypto.randomUUID();
+
+    // Check node exists and is connected
+    const node = this.nodeSessionManager.getNode(nodeId);
+    if (!node) {
+      throw new Error("NODE_NOT_FOUND: Node not found or not paired");
+    }
+
+    if (node.status !== "paired") {
+      throw new Error(`NODE_NOT_AVAILABLE: Node is ${node.status}`);
+    }
+
+    // Set up timeout
+    const timeoutMs = options.timeoutMs ?? 30000; // 30s default
+
+    // Send request
+    const request = {
+      jsonrpc: "2.0",
+      id: correlationId,
+      method,
+      params,
+    };
+
+    const sent = this.sendToNode(nodeId, request);
+    if (!sent) {
+      throw new Error("NODE_UNREACHABLE: Unable to send message to node");
+    }
+
+    // Wait for response
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(correlationId);
+        reject(new Error(`NODE_TIMEOUT: No response after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      this.pendingRequests.set(correlationId, { resolve, reject, timeout });
+    });
+  }
+
+  /**
+   * Handle response from node companion (called when receiving response message).
+   * @param message - JSON-RPC response message
+   */
+  handleNodeResponse(message: { id: string; result?: unknown; error?: { message: string } }): void {
+    const { id, result, error } = message;
+    const pending = this.pendingRequests.get(id);
+
+    if (!pending) {
+      // No pending request for this ID (might be already handled or unknown)
+      return;
+    }
+
+    clearTimeout(pending.timeout);
+    this.pendingRequests.delete(id);
+
+    if (error) {
+      pending.reject(new Error(error.message));
+    } else {
+      pending.resolve(result);
+    }
+  }
+
+  /**
+   * Handle node disconnection (rejects all pending requests for that node).
+   * @param socketId - WebSocket socket ID
+   */
+  handleNodeDisconnect(socketId: string): void {
+    // Mark node as offline
+    this.nodeSessionManager.markOffline(socketId);
+
+    // Find the node and reject all its pending requests
+    const node = this.nodeSessionManager.getNodeBySocket(socketId);
+    if (node) {
+      for (const [id, pending] of this.pendingRequests.entries()) {
+        // Reject all pending requests (conservative approach - node disconnected)
+        pending.reject(new Error("NODE_DISCONNECTED: Node companion disconnected"));
+        clearTimeout(pending.timeout);
+        this.pendingRequests.delete(id);
+      }
+    }
   }
 
   broadcast(method: string, params?: unknown): void {
