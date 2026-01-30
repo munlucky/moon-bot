@@ -1,10 +1,24 @@
 // File I/O Tool with workspace boundary enforcement
+// Uses TypeBox for compile-time type safety
 
 import fs from "fs/promises";
 import path from "path";
 import type { ToolSpec } from "../../types/index.js";
 import { PathValidator } from "./PathValidator.js";
 import { ToolResultBuilder } from "../runtime/ToolResultBuilder.js";
+import {
+  FileReadInputSchema,
+  FileWriteInputSchema,
+  FileListInputSchema,
+  FileGlobInputSchema,
+  FileEntrySchema,
+  toJSONSchema,
+  type FileReadInput,
+  type FileWriteInput,
+  type FileListInput,
+  type FileGlobInput,
+  type FileEntry,
+} from "../schemas/TypeBoxSchemas.js";
 
 /**
  * Recursively get all files in a directory.
@@ -32,49 +46,19 @@ async function getFilesRecursively(dirPath: string, basePath: string): Promise<s
   return files;
 }
 
-interface FileReadInput {
-  path: string;
-  encoding?: BufferEncoding;
-}
-
-interface FileWriteInput {
-  path: string;
-  content: string;
-  encoding?: BufferEncoding;
-  atomic?: boolean;
-}
-
-interface FileListInput {
-  path: string;
-  recursive?: boolean;
-}
-
-interface FileGlobInput {
-  pattern: string;
-}
-
-interface FileEntry {
-  name: string;
-  path: string;
-  type: "file" | "directory";
-  size?: number;
-}
+// TypeBox types now used instead of manual interfaces
+// Import from TypeBoxSchemas:
+// - FileReadInput, FileWriteInput, FileListInput, FileGlobInput, FileEntry
 
 /**
  * Create file I/O tools for read, write, list, and glob operations.
+ * Uses TypeBox schemas for compile-time type safety.
  */
 export function createFileReadTool(): ToolSpec<FileReadInput, { content: string; size: number }> {
   return {
     id: "fs.read",
     description: "Read file content from within workspace",
-    schema: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "File path relative to workspace root" },
-        encoding: { type: "string", enum: ["utf8", "ascii", "base64"], default: "utf8" },
-      },
-      required: ["path"],
-    },
+    schema: toJSONSchema(FileReadInputSchema),
     run: async (input, ctx) => {
       const startTime = Date.now();
 
@@ -120,16 +104,7 @@ export function createFileWriteTool(): ToolSpec<FileWriteInput, { success: boole
   return {
     id: "fs.write",
     description: "Write content to a file within workspace",
-    schema: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "File path relative to workspace root" },
-        content: { type: "string", description: "Content to write" },
-        encoding: { type: "string", enum: ["utf8", "ascii", "base64"], default: "utf8" },
-        atomic: { type: "boolean", default: true },
-      },
-      required: ["path", "content"],
-    },
+    schema: toJSONSchema(FileWriteInputSchema),
     run: async (input, ctx) => {
       const startTime = Date.now();
 
@@ -184,14 +159,7 @@ export function createFileListTool(): ToolSpec<FileListInput, { entries: FileEnt
   return {
     id: "fs.list",
     description: "List files and directories in a path",
-    schema: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "Directory path relative to workspace root" },
-        recursive: { type: "boolean", default: false },
-      },
-      required: ["path"],
-    },
+    schema: toJSONSchema(FileListInputSchema),
     run: async (input, ctx) => {
       const startTime = Date.now();
 
@@ -271,13 +239,7 @@ export function createFileGlobTool(): ToolSpec<FileGlobInput, { paths: string[] 
   return {
     id: "fs.glob",
     description: "Find files matching a glob pattern within workspace",
-    schema: {
-      type: "object",
-      properties: {
-        pattern: { type: "string", description: "Glob pattern (e.g., '**/*.ts')" },
-      },
-      required: ["pattern"],
-    },
+    schema: toJSONSchema(FileGlobInputSchema),
     run: async (input, ctx) => {
       const startTime = Date.now();
 

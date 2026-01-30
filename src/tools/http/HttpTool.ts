@@ -1,17 +1,20 @@
 // HTTP Tool with SSRF protection
+// Uses TypeBox for compile-time type safety
 
 import type { ToolSpec } from "../../types/index.js";
 import { SsrfGuard } from "./SsrfGuard.js";
 import { ToolResultBuilder } from "../runtime/ToolResultBuilder.js";
-
-interface HttpRequestInput {
-  method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS";
-  url: string;
-  headers?: Record<string, string>;
-  query?: Record<string, string>;
-  body?: string;
-  timeoutMs?: number;
-}
+import {
+  HttpRequestInputSchema,
+  HttpDownloadInputSchema,
+  HttpResponseSchema,
+  HttpDownloadResultSchema,
+  toJSONSchema,
+  type HttpRequestInput,
+  type HttpDownloadInput,
+  type HttpResponse,
+  type HttpDownloadResult,
+} from "../schemas/TypeBoxSchemas.js";
 
 /**
  * Validate HTTP headers for security.
@@ -68,23 +71,9 @@ function validateHeaders(headers?: Record<string, string>): { valid: boolean; re
   return { valid: true };
 }
 
-interface HttpResponse {
-  status: number;
-  statusText: string;
-  headers: Record<string, string>;
-  body: string;
-}
-
-interface HttpDownloadInput {
-  url: string;
-  destPath: string;
-}
-
-interface HttpDownloadResult {
-  success: boolean;
-  path: string;
-  size: number;
-}
+// Interfaces now imported from TypeBoxSchemas:
+// - HttpRequestInput, HttpResponse
+// - HttpDownloadInput, HttpDownloadResult
 
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -95,21 +84,7 @@ export function createHttpRequestTool(): ToolSpec<HttpRequestInput, HttpResponse
   return {
     id: "http.request",
     description: "Make an HTTP request with SSRF protection",
-    schema: {
-      type: "object",
-      properties: {
-        method: {
-          type: "string",
-          enum: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
-        },
-        url: { type: "string" },
-        headers: { type: "object" },
-        query: { type: "object" },
-        body: { type: "string" },
-        timeoutMs: { type: "number" },
-      },
-      required: ["method", "url"],
-    },
+    schema: toJSONSchema(HttpRequestInputSchema),
     run: async (input, ctx) => {
       const startTime = Date.now();
 
@@ -214,14 +189,7 @@ export function createHttpDownloadTool(): ToolSpec<HttpDownloadInput, HttpDownlo
   return {
     id: "http.download",
     description: "Download a file from a URL (requires filesystem access)",
-    schema: {
-      type: "object",
-      properties: {
-        url: { type: "string" },
-        destPath: { type: "string", description: "Destination path relative to workspace" },
-      },
-      required: ["url", "destPath"],
-    },
+    schema: toJSONSchema(HttpDownloadInputSchema),
     run: async (input, ctx) => {
       const startTime = Date.now();
 

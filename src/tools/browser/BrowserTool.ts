@@ -1,9 +1,41 @@
 // Browser automation tool using Playwright
+// Uses TypeBox for compile-time type safety
 
 import type { ToolSpec } from "../../types/index.js";
 import { SessionManager } from "./SessionManager.js";
 import type { Browser, Page } from "playwright";
 import { ToolResultBuilder } from "../runtime/ToolResultBuilder.js";
+import {
+  BrowserStartInputSchema,
+  BrowserGotoInputSchema,
+  BrowserSnapshotInputSchema,
+  BrowserActInputSchema,
+  BrowserScreenshotInputSchema,
+  BrowserCloseInputSchema,
+  BrowserExtractInputSchema,
+  BrowserStartResultSchema,
+  BrowserGotoResultSchema,
+  BrowserSnapshotResultSchema,
+  BrowserActResultSchema,
+  BrowserScreenshotResultSchema,
+  BrowserCloseResultSchema,
+  BrowserExtractResultSchema,
+  toJSONSchema,
+  type BrowserStartInput,
+  type BrowserGotoInput,
+  type BrowserSnapshotInput,
+  type BrowserActInput,
+  type BrowserScreenshotInput,
+  type BrowserCloseInput,
+  type BrowserExtractInput,
+  type BrowserStartResult,
+  type BrowserGotoResult,
+  type BrowserSnapshotResult,
+  type BrowserActResult,
+  type BrowserScreenshotResult,
+  type BrowserCloseResult,
+  type BrowserExtractResult,
+} from "../schemas/TypeBoxSchemas.js";
 
 // Lazy import Playwright to avoid issues if not installed
 let playwright: typeof import("playwright") | null = null;
@@ -15,74 +47,7 @@ async function getPlaywright(): Promise<typeof import("playwright")> {
   return playwright;
 }
 
-interface BrowserStartInput {
-  sessionKey?: string;
-  headless?: boolean;
-}
-
-interface BrowserStartResult {
-  sessionId: string;
-}
-
-interface BrowserGotoInput {
-  url: string;
-  sessionKey?: string;
-}
-
-interface BrowserGotoResult {
-  success: boolean;
-  url: string;
-}
-
-interface BrowserSnapshotInput {
-  sessionKey?: string;
-  mode: "aria" | "dom";
-}
-
-interface BrowserSnapshotResult {
-  tree: string;
-}
-
-interface BrowserActInput {
-  type: "click" | "type" | "press";
-  selector: string;
-  text?: string;
-  key?: string;
-  sessionKey?: string;
-}
-
-interface BrowserActResult {
-  success: boolean;
-}
-
-interface BrowserScreenshotInput {
-  fullPage?: boolean;
-  sessionKey?: string;
-}
-
-interface BrowserScreenshotResult {
-  imageData: string;
-  format: "png";
-}
-
-interface BrowserCloseInput {
-  sessionKey?: string;
-}
-
-interface BrowserCloseResult {
-  success: boolean;
-}
-
-interface BrowserExtractInput {
-  selector: string;
-  kind: "text" | "html" | "attribute";
-  attribute?: string;
-  sessionKey?: string;
-}
-
-interface BrowserExtractResult {
-  content: string;
-}
+// Interfaces now imported from TypeBoxSchemas
 
 /**
  * Browser tool implementation using Playwright.
@@ -316,13 +281,7 @@ export function createBrowserTools(browserTool: BrowserTool): ToolSpec[] {
     {
       id: "browser.start",
       description: "Start a browser session",
-      schema: {
-        type: "object",
-        properties: {
-          sessionKey: { type: "string" },
-          headless: { type: "boolean" },
-        },
-      },
+      schema: toJSONSchema(BrowserStartInputSchema),
       run: async (input) => {
         const startTime = Date.now();
         try {
@@ -340,14 +299,7 @@ export function createBrowserTools(browserTool: BrowserTool): ToolSpec[] {
     {
       id: "browser.goto",
       description: "Navigate to a URL (HTTPS only)",
-      schema: {
-        type: "object",
-        properties: {
-          url: { type: "string" },
-          sessionKey: { type: "string" },
-        },
-        required: ["url"],
-      },
+      schema: toJSONSchema(BrowserGotoInputSchema),
       run: async (input) => {
         const startTime = Date.now();
         try {
@@ -365,14 +317,7 @@ export function createBrowserTools(browserTool: BrowserTool): ToolSpec[] {
     {
       id: "browser.snapshot",
       description: "Get ARIA or DOM snapshot of the page",
-      schema: {
-        type: "object",
-        properties: {
-          mode: { type: "string", enum: ["aria", "dom"] },
-          sessionKey: { type: "string" },
-        },
-        required: ["mode"],
-      },
+      schema: toJSONSchema(BrowserSnapshotInputSchema),
       run: async (input) => {
         const startTime = Date.now();
         try {
@@ -390,17 +335,7 @@ export function createBrowserTools(browserTool: BrowserTool): ToolSpec[] {
     {
       id: "browser.act",
       description: "Perform an action (click, type, press)",
-      schema: {
-        type: "object",
-        properties: {
-          type: { type: "string", enum: ["click", "type", "press"] },
-          selector: { type: "string" },
-          text: { type: "string" },
-          key: { type: "string" },
-          sessionKey: { type: "string" },
-        },
-        required: ["type", "selector"],
-      },
+      schema: toJSONSchema(BrowserActInputSchema),
       run: async (input) => {
         const startTime = Date.now();
         try {
@@ -418,13 +353,7 @@ export function createBrowserTools(browserTool: BrowserTool): ToolSpec[] {
     {
       id: "browser.screenshot",
       description: "Take a screenshot",
-      schema: {
-        type: "object",
-        properties: {
-          fullPage: { type: "boolean" },
-          sessionKey: { type: "string" },
-        },
-      },
+      schema: toJSONSchema(BrowserScreenshotInputSchema),
       run: async (input) => {
         const startTime = Date.now();
         try {
@@ -442,16 +371,7 @@ export function createBrowserTools(browserTool: BrowserTool): ToolSpec[] {
     {
       id: "browser.extract",
       description: "Extract content from the page",
-      schema: {
-        type: "object",
-        properties: {
-          selector: { type: "string" },
-          kind: { type: "string", enum: ["text", "html", "attribute"] },
-          attribute: { type: "string" },
-          sessionKey: { type: "string" },
-        },
-        required: ["selector", "kind"],
-      },
+      schema: toJSONSchema(BrowserExtractInputSchema),
       run: async (input) => {
         const startTime = Date.now();
         try {
@@ -469,12 +389,7 @@ export function createBrowserTools(browserTool: BrowserTool): ToolSpec[] {
     {
       id: "browser.close",
       description: "Close a browser session",
-      schema: {
-        type: "object",
-        properties: {
-          sessionKey: { type: "string" },
-        },
-      },
+      schema: toJSONSchema(BrowserCloseInputSchema),
       run: async (input) => {
         const startTime = Date.now();
         try {

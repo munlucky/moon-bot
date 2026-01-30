@@ -1,31 +1,20 @@
 // System execution tool (system.run) with approval and sanitization
+// Uses TypeBox for compile-time type safety
 
 import { spawn } from "child_process";
 import type { ToolSpec } from "../../types/index.js";
 import { ApprovalManager } from "../runtime/ApprovalManager.js";
 import { CommandSanitizer } from "./CommandSanitizer.js";
 import { ToolResultBuilder } from "../runtime/ToolResultBuilder.js";
-
-interface SystemRunInput {
-  argv: string | string[];
-  cwd?: string;
-  env?: Record<string, string>;
-  timeoutMs?: number;
-}
-
-interface SystemRunResult {
-  exitCode: number | null;
-  stdout: string;
-  stderr: string;
-}
-
-interface SystemRunRawInput {
-  command: string;
-  shell?: boolean;
-  cwd?: string;
-  env?: Record<string, string>;
-  timeoutMs?: number;
-}
+import {
+  SystemRunInputSchema,
+  SystemRunRawInputSchema,
+  SystemRunResultSchema,
+  toJSONSchema,
+  type SystemRunInput,
+  type SystemRunRawInput,
+  type SystemRunResult,
+} from "../schemas/TypeBoxSchemas.js";
 
 const MAX_OUTPUT_SIZE = 1024 * 1024; // 1MB max for stdout/stderr
 
@@ -36,18 +25,7 @@ export function createSystemRunTool(approvalManager: ApprovalManager): ToolSpec<
   return {
     id: "system.run",
     description: "Execute a system command (requires approval)",
-    schema: {
-      type: "object",
-      properties: {
-        argv: {
-          oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
-        },
-        cwd: { type: "string" },
-        env: { type: "object" },
-        timeoutMs: { type: "number" },
-      },
-      required: ["argv"],
-    },
+    schema: toJSONSchema(SystemRunInputSchema),
     requiresApproval: true,
     run: async (input, ctx) => {
       const startTime = Date.now();
@@ -102,17 +80,7 @@ export function createSystemRunRawTool(approvalManager: ApprovalManager): ToolSp
   return {
     id: "system.runRaw",
     description: "[DANGEROUS] Execute raw shell command (DEPRECATED)",
-    schema: {
-      type: "object",
-      properties: {
-        command: { type: "string" },
-        shell: { type: "boolean", default: false },
-        cwd: { type: "string" },
-        env: { type: "object" },
-        timeoutMs: { type: "number" },
-      },
-      required: ["command"],
-    },
+    schema: toJSONSchema(SystemRunRawInputSchema),
     requiresApproval: true,
     run: async (input, ctx) => {
       const startTime = Date.now();

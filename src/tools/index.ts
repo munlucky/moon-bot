@@ -7,6 +7,7 @@ import { createLogger, type Logger } from "../utils/logger.js";
 import type { SystemConfig, ToolSpec, ToolContext, ToolResult, ToolDefinition, ToolMeta } from "../types/index.js";
 import { ToolRuntime } from "./runtime/ToolRuntime.js";
 import { ApprovalManager } from "./runtime/ApprovalManager.js";
+import { filterToolsByProfile, type ToolProfile } from "./policy/ToolProfile.js";
 
 // File I/O Tools
 import {
@@ -131,10 +132,17 @@ export class Toolkit {
 
 /**
  * Create and configure all Gateway tools.
+ * @param config - System configuration
+ * @param options - Tool creation options
+ * @param options.profile - Tool profile to apply (default: 'full')
+ * @param options.workspaceRoot - Workspace root directory
+ * @param options.enableBrowser - Enable browser tools (requires profile='full')
+ * @param options.browserHeadless - Run browser in headless mode
  */
 export async function createGatewayTools(
   config: SystemConfig,
   options: {
+    profile?: ToolProfile;
     workspaceRoot?: string;
     enableBrowser?: boolean;
     browserHeadless?: boolean;
@@ -142,37 +150,51 @@ export async function createGatewayTools(
 ): Promise<Toolkit> {
   const toolkit = new Toolkit(config);
   const workspaceRoot = options.workspaceRoot ?? process.cwd();
+  const profile = options.profile ?? "full";
 
-  // Create approval manager
+  // Collect all candidate tools
+  const candidateTools: ToolSpec[] = [];
+
+  // Create approval manager (needed for system tools)
   const approvalManager = new ApprovalManager();
   await approvalManager.loadConfig();
 
-  // Register File I/O tools
-  toolkit.register(createFileReadTool() as ToolSpec<unknown, unknown>);
-  toolkit.register(createFileWriteTool() as ToolSpec<unknown, unknown>);
-  toolkit.register(createFileListTool() as ToolSpec<unknown, unknown>);
-  toolkit.register(createFileGlobTool() as ToolSpec<unknown, unknown>);
+  // File I/O tools
+  candidateTools.push(
+    createFileReadTool() as ToolSpec<unknown, unknown>,
+    createFileWriteTool() as ToolSpec<unknown, unknown>,
+    createFileListTool() as ToolSpec<unknown, unknown>,
+    createFileGlobTool() as ToolSpec<unknown, unknown>
+  );
 
-  // Register HTTP tools
-  toolkit.register(createHttpRequestTool() as ToolSpec<unknown, unknown>);
-  toolkit.register(createHttpDownloadTool() as ToolSpec<unknown, unknown>);
+  // HTTP tools
+  candidateTools.push(
+    createHttpRequestTool() as ToolSpec<unknown, unknown>,
+    createHttpDownloadTool() as ToolSpec<unknown, unknown>
+  );
 
-  // Register Desktop tools
-  toolkit.register(createSystemRunTool(approvalManager) as ToolSpec<unknown, unknown>);
-  toolkit.register(createSystemRunRawTool(approvalManager) as ToolSpec<unknown, unknown>);
+  // Desktop tools
+  candidateTools.push(
+    createSystemRunTool(approvalManager) as ToolSpec<unknown, unknown>,
+    createSystemRunRawTool(approvalManager) as ToolSpec<unknown, unknown>
+  );
 
-  // Register Browser tools (if enabled)
-  if (options.enableBrowser) {
+  // Browser tools (only if explicitly enabled AND profile allows)
+  const enableBrowser = options.enableBrowser && profile === "full";
+  if (enableBrowser) {
     const browserTool = new BrowserTool(5);
     await browserTool.initialize(options.browserHeadless ?? true);
 
-    const browserTools = createBrowserTools(browserTool);
-    for (const tool of browserTools) {
-      toolkit.register(tool);
-    }
+    candidateTools.push(...createBrowserTools(browserTool));
 
     // Store browser tool reference for cleanup
     (toolkit as any).browserTool = browserTool;
+  }
+
+  // Filter tools by profile and register
+  const filteredTools = filterToolsByProfile(candidateTools, profile);
+  for (const tool of filteredTools) {
+    toolkit.register(tool);
   }
 
   // Initialize runtime
