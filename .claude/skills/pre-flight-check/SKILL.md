@@ -51,5 +51,47 @@ OK archives/ directory: exists
 2. [MEDIUM] Verify design assets (invoke design-spec-extractor)
 ```
 
+---
+
+## Anti-Pattern Check
+
+> Detect common mistakes based on "How to write a good spec for AI agents" guide
+
+### Checklist
+
+| Anti-Pattern | Detection Method | Status |
+|--------------|-----------------|--------|
+| **Vague prompts** | "Make something cool", "Make it work better" | ⚠️ |
+| **Large context without summary** | specification.md > 3,000 tokens + no summary | ⚠️ |
+| **Missing 6 core areas** | PROJECT.md lacks commands/tests/structure/style/Git/boundaries | ⚠️ |
+| **Vibe coding ↔ Production confusion** | Attempting production deploy without tests | ⚠️ |
+| **Ignoring deadly trinity** | Proceeding without verification for speed/non-determinism/cost | ⚠️ |
+
+### Recommended Actions on Detection
+
+| Detected Anti-Pattern | Recommended Action |
+|----------------------|-------------------|
+| Vague request | Invoke `requirements-analyzer` to clarify |
+| Large document | Follow `document-memory-policy.md` to summarize |
+| Missing areas | Recommend PROJECT.md review, reference template sections |
+| No tests | Recommend writing tests before `completion-verifier` |
+
+### Output Example
+
+```markdown
+## Anti-Pattern Check Results
+
+| Item | Status | Action |
+|------|--------|--------|
+| Clear request | ✅ | - |
+| Context size | ✅ | ~2,500 tokens |
+| 6 core areas | ⚠️ | Git workflow undefined |
+| Test defined | ✅ | - |
+
+**Recommended Actions:**
+1. [MEDIUM] Add Git Workflow section to PROJECT.md
+```
+
 ## References
 - `.claude/docs/guidelines/document-memory-policy.md`
+

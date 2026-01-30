@@ -18,6 +18,75 @@ const updatedUser = { ...user, name: "New Name" }
 const newItems = [...items, newItem]
 ```
 
+## 네이밍 규칙
+
+> "설명 세 문단보다 코드 예제 하나가 낫습니다" - 좋은 스펙 작성 원칙
+
+### 좋은 예시
+
+```typescript
+// ✅ 컴포넌트: PascalCase
+export const UserProfile = () => { ... }
+export const BatchManagementTable = () => { ... }
+
+// ✅ 변수/함수: camelCase
+const fetchUserData = async () => { ... }
+const handleSubmit = () => { ... }
+const isLoading = true
+
+// ✅ 상수: SCREAMING_SNAKE_CASE
+const API_BASE_URL = '/api/v1'
+const MAX_RETRY_COUNT = 3
+const DEFAULT_PAGE_SIZE = 10
+
+// ✅ 타입/인터페이스: PascalCase
+interface UserResponse { ... }
+type BatchExecutionStatus = 'pending' | 'running' | 'completed'
+
+// ✅ 훅: use 접두사
+const useUserData = () => { ... }
+const useBatchManagement = () => { ... }
+
+// ✅ 이벤트 핸들러: handle 접두사
+const handleClick = () => { ... }
+const handleFormSubmit = (e: FormEvent) => { ... }
+```
+
+### 나쁜 예시
+
+```typescript
+// ❌ 컴포넌트에 camelCase
+export const userProfile = () => { ... }
+
+// ❌ 함수에 PascalCase
+const FetchUserData = async () => { ... }
+
+// ❌ 모호한 변수명
+const x = await fetchData()
+const tmp = users.filter(...)
+const data = response.json()  // 무슨 데이터?
+const info = getInfo()        // 무슨 정보?
+
+// ❌ 일관성 없는 네이밍
+const fetch_user_data = () => { ... }  // JS에서 snake_case
+const USERPROFILE = () => { ... }       // 컴포넌트에 대문자만
+```
+
+### 파일 네이밍
+
+```
+✅ 좋은 예시:
+- UserProfile.tsx          (컴포넌트)
+- useUserData.ts           (훅)
+- userService.ts           (서비스)
+- user.types.ts            (타입)
+
+❌ 나쁜 예시:
+- user-profile.tsx         (컴포넌트에 kebab-case)
+- User_Data.ts             (혼합 케이스)
+- CONSTANTS.ts             (파일명 전체 대문자)
+```
+
 ## 금지 사항
 
 - 프로덕션 코드에 `console.log`

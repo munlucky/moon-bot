@@ -1,6 +1,6 @@
 ---
 title: Document Memory Policy
-description: 모든 에이전트/스킬이 공유하는 문서 토큰 관리 정책
+description: Document token management policy shared by all agents/skills
 applies-to:
   - moonshot-orchestrator
   - context-builder
@@ -15,35 +15,35 @@ applies-to:
 
 # Document Memory Policy
 
-> **Purpose**: 모든 에이전트/스킬이 공유하는 문서 메모리 전략으로, 토큰 제한 오류를 방지합니다.
+> **Purpose**: Shared document memory strategy for all agents/skills to prevent token limit errors.
 > **Required by**: moonshot-orchestrator, context-builder, requirements-analyzer, implementation-agent, verification-agent, session-logger, efficiency-tracker, codex-* skills
 
-**Path Configuration**: 문서 경로는 `.claude/PROJECT.md`의 `documentPaths.tasksRoot` 설정을 따릅니다.
-- 기본값: `.claude/docs/tasks`
-- 권장값 (git 추적 시): `docs/claude-tasks`
+**Path Configuration**: Document paths follow the `documentPaths.tasksRoot` setting in `.claude/PROJECT.md`.
+- Default: `.claude/docs/tasks`
+- Recommended (for git-tracked): `docs/claude-tasks`
 
 ---
 
-## 1. 디렉토리 구조 (작업 단위)
+## 1. Directory Structure (Per Task)
 
-모든 작업은 다음 구조를 따릅니다 (`{tasksRoot}` = PROJECT.md의 `documentPaths.tasksRoot`):
+All tasks follow this structure (`{tasksRoot}` = PROJECT.md's `documentPaths.tasksRoot`):
 
 ```
 {tasksRoot}/{feature-name}/
-├── context.md              # 현재 계획 (최대 8000 토큰)
-├── specification.md        # 요약된 명세서 (2000 토큰 이하)
-├── pending-questions.md    # 미해결 질문
-├── verification-result.md  # 검증 결과
-├── flow-report.md          # 워크플로우 리포트
+├── context.md              # Current plan (max 8000 tokens)
+├── specification.md        # Summarized spec (under 2000 tokens)
+├── pending-questions.md    # Unresolved questions
+├── verification-result.md  # Verification results
+├── flow-report.md          # Workflow report
 ├── session-logs/
-│   ├── day-YYYY-MM-DD.md   # 일별 세션 로그
+│   ├── day-YYYY-MM-DD.md   # Daily session logs
 │   └── ...
-├── archives/               # 아카이브 (토큰 절약)
-│   ├── specification-full.md    # 원본 명세서
-│   ├── context-v1.md            # 이전 계획 버전
-│   ├── review-v1.md             # 리뷰 로그
+├── archives/               # Archives (token savings)
+│   ├── specification-full.md    # Original specification
+│   ├── context-v1.md            # Previous plan versions
+│   ├── review-v1.md             # Review logs
 │   └── ...
-└── subtasks/               # 서브태스크 (분할 시)
+└── subtasks/               # Subtasks (when split)
     ├── subtask-01/
     │   ├── context.md
     │   └── ...
@@ -53,161 +53,209 @@ applies-to:
 
 ---
 
-## 2. 토큰 임계값
+## 2. Token Thresholds
 
-| 문서 유형 | 최대 토큰 | 초과 시 조치 |
-|-----------|----------|-------------|
-| `context.md` | 8,000 | 이전 버전 아카이빙 |
-| `specification.md` | 2,000 | 원본을 archives/로 이동, 요약만 유지 |
-| 단일 리뷰 출력 | 4,000 | archives/로 이동, 요약만 context.md에 추가 |
-| 세션 로그 (일별) | 5,000 | 다음 날 파일로 분할 |
+| Document Type | Max Tokens | Action When Exceeded |
+|---------------|-----------|---------------------|
+| `context.md` | 8,000 | Archive previous version |
+| `specification.md` | 2,000 | Move original to archives/, keep summary only |
+| Single review output | 4,000 | Move to archives/, add summary only to context.md |
+| Session log (daily) | 5,000 | Split to next day's file |
 
-**참고**: 1,000 토큰 ≈ 750 단어 (영어) / 500 단어 (한국어)
+**Note**: 1,000 tokens ≈ 750 words (English) / 500 words (Korean)
 
 ---
 
-## 3. 대형 명세서 처리
+## 3. Large Specification Handling
 
-### 3.1 요약 트리거
+### 3.1 Summary Trigger
 
-다음 조건 중 하나 충족 시 요약 수행:
-- 명세서 단어 수 > 2,000단어
-- 명세서 토큰 수 > 3,000토큰 (추정)
-- 독립 기능/모듈 > 5개 포함
+Perform summary when any of these conditions are met:
+- Specification word count > 2,000 words
+- Specification token count > 3,000 tokens (estimated)
+- Contains > 5 independent features/modules
 
-### 3.2 요약 절차
+### 3.2 Summary Procedure
 
-1. **원본 보존**: `archives/specification-full.md`에 저장
-2. **요약 생성**: 핵심 요구사항, 제약조건, 수용기준만 추출
-3. **specification.md 작성**: 요약본 + 원본 링크
-4. **아카이브 인덱스 갱신**: context.md에 참조 추가
+1. **Preserve original**: Save to `archives/specification-full.md`
+2. **Generate summary**: Extract core requirements, constraints, acceptance criteria only
+3. **Write specification.md**: Summary + link to original
+4. **Update archive index**: Add reference in context.md
 
-### 3.3 요약 포맷
+### 3.3 Summary Format
 
 ```markdown
-## 요약된 명세서
+## Summarized Specification
 
-### 핵심 요구사항
-1. [요구사항 1]
-2. [요구사항 2]
+### Core Requirements
+1. [Requirement 1]
+2. [Requirement 2]
 ...
 
-### 제약조건
-- [제약조건 1]
-- [제약조건 2]
+### Constraints
+- [Constraint 1]
+- [Constraint 2]
 
-### 수용기준
-- [ ] [기준 1]
-- [ ] [기준 2]
+### Acceptance Criteria
+- [ ] [Criterion 1]
+- [ ] [Criterion 2]
 
-> 📎 원본: [specification-full.md](archives/specification-full.md)
+> 📎 Original: [specification-full.md](archives/specification-full.md)
 ```
+
+### 3.4 Hierarchical Context
+
+> "Context length does not replace quality" - How to write a good spec for AI agents
+
+Use **table of contents and summaries** for agents to navigate large specs efficiently.
+
+#### TOC Pattern
+
+Instead of dumping 50 pages, provide hierarchical summary:
+
+```markdown
+# Specification Summary
+
+## Table of Contents
+1. [API Endpoints](#api-endpoints) - 5 endpoints
+2. [Data Models](#data-models) - 3 entities
+3. [Business Logic](#business-logic) - Processing rules
+4. [Error Handling](#error-handling) - Error codes
+
+## Summary
+- **Total expected files**: 12
+- **Complexity**: complex
+- **Key constraints**: Auth required, activity logging
+
+## Key Decisions
+- Use API proxy pattern (security)
+- Date input: single date (yyyy-mm-dd)
+
+> 📎 Full details: [specification-full.md](archives/specification-full.md)
+```
+
+#### Section-Based Access
+
+Agents check TOC first, then load only needed sections via `view_file`:
+
+```
+1. Check specification.md TOC
+2. Identify needed section (e.g., "API Endpoints")
+3. Load only that section from archives/specification-full.md via view_file
+4. Proceed with work
+```
+
+#### Benefits
+
+- **Token savings**: Load only what's needed instead of everything
+- **Maintain focus**: Prevent "curse of instructions"
+- **Easy navigation**: Quick search via structured TOC
 
 ---
 
-## 4. 작업 분할 전략
+## 4. Task Splitting Strategy
 
-### 4.1 분할 트리거
+### 4.1 Split Trigger
 
-| 복잡도 | 예상 파일 수 | 독립 기능 수 | 분할 여부 |
-|--------|-------------|-------------|----------|
-| simple | ≤ 3 | 1 | ❌ 분할 안 함 |
-| medium | 4-10 | 2-4 | ⚠️ 선택적 분할 |
-| complex | > 10 | > 5 | ✅ 필수 분할 |
+| Complexity | Expected Files | Independent Features | Split? |
+|-----------|---------------|---------------------|--------|
+| simple | ≤ 3 | 1 | ❌ Don't split |
+| medium | 4-10 | 2-4 | ⚠️ Optional split |
+| complex | > 10 | > 5 | ✅ Must split |
 
-### 4.2 분할 절차
+### 4.2 Split Procedure
 
-1. **서브태스크 정의**: 각 독립 기능/모듈을 서브태스크로 분리
-2. **디렉토리 생성**: `subtasks/subtask-NN/` 구조 생성
-3. **독립 실행**: 각 서브태스크는 독립 analysisContext로 워크플로우 실행
-4. **결과 병합**: 상위 context.md에 요약만 기록
+1. **Define subtasks**: Separate each independent feature/module into subtask
+2. **Create directories**: Create `subtasks/subtask-NN/` structure
+3. **Independent execution**: Each subtask runs workflow with independent analysisContext
+4. **Merge results**: Record only summary in parent context.md
 
-### 4.3 서브태스크 context.md 포맷
+### 4.3 Subtask context.md Format
 
 ```markdown
 # Subtask: {subtask-name}
 
-## 상위 작업
-- 기능명: {feature-name}
-- 마스터 계획: [../context.md](../context.md)
+## Parent Task
+- Feature: {feature-name}
+- Master plan: [../context.md](../context.md)
 
-## 범위
-- 담당 모듈: [모듈명]
-- 대상 파일: [파일 목록]
+## Scope
+- Assigned module: [module name]
+- Target files: [file list]
 
-## 상세 계획
+## Detailed Plan
 ...
 ```
 
 ---
 
-## 5. 아카이빙 규칙
+## 5. Archiving Rules
 
-### 5.1 아카이빙 트리거
+### 5.1 Archive Trigger
 
-- context.md 갱신 시 이전 내용이 변경된 경우
-- plan → review → revise 루프에서 리뷰 완료 시
-- 토큰 임계치 80% 도달 시 (경고)
+- When context.md is updated with changed content
+- When review is complete in plan → review → revise loop
+- When token threshold reaches 80% (warning)
 
-### 5.2 아카이빙 절차
+### 5.2 Archive Procedure
 
-1. **버전 생성**: `archives/context-v{n}.md`로 복사
-2. **요약 유지**: 현재 context.md에는 최신 계획만 유지
-3. **인덱스 갱신**: 아래 형식으로 참조 추가
+1. **Create version**: Copy to `archives/context-v{n}.md`
+2. **Keep summary**: Keep only latest plan in current context.md
+3. **Update index**: Add reference in format below
 
-### 5.3 아카이브 인덱스 (context.md 하단)
+### 5.3 Archive Index (at bottom of context.md)
 
 ```markdown
-## 아카이브 참조
+## Archive References
 
-| 버전 | 파일 | 핵심 내용 | 생성일 |
-|------|------|----------|--------|
-| v1 | [context-v1.md](archives/context-v1.md) | 초기 API 설계 | 2026-01-13 |
-| v2 | [review-v1.md](archives/review-v1.md) | Codex 플랜 리뷰 피드백 | 2026-01-13 |
+| Version | File | Key Content | Created |
+|---------|------|-------------|---------|
+| v1 | [context-v1.md](archives/context-v1.md) | Initial API design | 2026-01-13 |
+| v2 | [review-v1.md](archives/review-v1.md) | Codex plan review feedback | 2026-01-13 |
 ```
 
 ---
 
-## 6. 에이전트/스킬별 적용
+## 6. Agent/Skill Application
 
-### 모든 에이전트/스킬 공통
+### Common for All Agents/Skills
 
-1. **토큰 인식**: 출력 생성 전 현재 context.md 크기 확인
-2. **경고 로깅**: 임계치 80% 도달 시 notes에 경고 추가
-3. **자동 아카이빙**: 임계치 100% 도달 시 아카이빙 수행
-4. **인덱스 유지**: 아카이브 생성 시 인덱스 갱신
+1. **Token awareness**: Check current context.md size before generating output
+2. **Warning logging**: Add warning to notes when threshold reaches 80%
+3. **Auto-archive**: Perform archiving when threshold reaches 100%
+4. **Maintain index**: Update index when creating archives
 
-### 스킬별 추가 규칙
+### Additional Rules by Skill
 
-| 스킬 | 추가 규칙 |
-|------|----------|
-| `moonshot-orchestrator` | 2.0 단계에서 대형 명세서 처리 및 분할 수행 |
-| `codex-validate-plan` | 전체 리뷰는 archives/에 저장, 요약만 context.md에 추가 |
-| `codex-review-code` | 전체 리뷰는 archives/에 저장, 요약만 context.md에 추가 |
-| `session-logger` | 일별 5000토큰 초과 시 다음 날 파일로 분할 |
-| `efficiency-tracker` | flow-report.md 4000토큰 초과 시 아카이빙 |
+| Skill | Additional Rule |
+|-------|----------------|
+| `moonshot-orchestrator` | Handle large specs and splitting at step 2.0 |
+| `codex-validate-plan` | Save full review to archives/, add only summary to context.md |
+| `codex-review-code` | Save full review to archives/, add only summary to context.md |
+| `session-logger` | Split to next day's file when exceeding 5000 tokens daily |
+| `efficiency-tracker` | Archive flow-report.md when exceeding 4000 tokens |
 
 ---
 
-## 7. 참조 방법
+## 7. Reference Method
 
-아카이브된 문서 참조 시:
+When referencing archived documents:
 
 ```markdown
-상세 내용은 [specification-full.md](archives/specification-full.md)를 참조하세요.
+See [specification-full.md](archives/specification-full.md) for full details.
 ```
 
-에이전트는 필요 시 해당 파일을 `view_file`로 직접 로드합니다.
+Agents load the file directly via `view_file` when needed.
 
 ---
 
-## 8. 체크리스트
+## 8. Checklist
 
-각 스킬 실행 시 확인:
+Verify at each skill execution:
 
-- [ ] PROJECT.md에서 `documentPaths.tasksRoot` 확인
-- [ ] 현재 작업 디렉토리 존재 확인 (`{tasksRoot}/{feature-name}/`)
-- [ ] context.md 토큰 사용량 확인
-- [ ] 아카이브 인덱스 최신화 확인
-- [ ] 대형 명세서 여부 확인 (2000단어 초과?)
-- [ ] 서브태스크 분할 필요 여부 확인 (complex + 5개 이상 기능?)
+- [ ] Check `documentPaths.tasksRoot` in PROJECT.md
+- [ ] Verify current task directory exists (`{tasksRoot}/{feature-name}/`)
+- [ ] Check context.md token usage
+- [ ] Verify archive index is up to date
+- [ ] Check if large specification (> 2000 words?)
+- [ ] Check if subtask split needed (complex + 5+ features?)

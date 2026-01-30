@@ -18,6 +18,75 @@ const updatedUser = { ...user, name: "New Name" }
 const newItems = [...items, newItem]
 ```
 
+## Naming Conventions
+
+> "A code example is worth three paragraphs of description" - Good spec practices
+
+### Good Examples
+
+```typescript
+// ✅ Components: PascalCase
+export const UserProfile = () => { ... }
+export const BatchManagementTable = () => { ... }
+
+// ✅ Variables/Functions: camelCase
+const fetchUserData = async () => { ... }
+const handleSubmit = () => { ... }
+const isLoading = true
+
+// ✅ Constants: SCREAMING_SNAKE_CASE
+const API_BASE_URL = '/api/v1'
+const MAX_RETRY_COUNT = 3
+const DEFAULT_PAGE_SIZE = 10
+
+// ✅ Types/Interfaces: PascalCase
+interface UserResponse { ... }
+type BatchExecutionStatus = 'pending' | 'running' | 'completed'
+
+// ✅ Hooks: use prefix
+const useUserData = () => { ... }
+const useBatchManagement = () => { ... }
+
+// ✅ Event handlers: handle prefix
+const handleClick = () => { ... }
+const handleFormSubmit = (e: FormEvent) => { ... }
+```
+
+### Bad Examples
+
+```typescript
+// ❌ Component with camelCase
+export const userProfile = () => { ... }
+
+// ❌ Function with PascalCase
+const FetchUserData = async () => { ... }
+
+// ❌ Vague variable names
+const x = await fetchData()
+const tmp = users.filter(...)
+const data = response.json()  // What data?
+const info = getInfo()        // What info?
+
+// ❌ Inconsistent naming
+const fetch_user_data = () => { ... }  // snake_case in JS
+const USERPROFILE = () => { ... }       // All caps for component
+```
+
+### File Naming
+
+```
+✅ Good:
+- UserProfile.tsx          (component)
+- useUserData.ts           (hook)
+- userService.ts           (service)
+- user.types.ts            (types)
+
+❌ Bad:
+- user-profile.tsx         (kebab-case for component)
+- User_Data.ts             (mixed case)
+- CONSTANTS.ts             (all caps file name)
+```
+
 ## Prohibited
 
 - `console.log` in production code

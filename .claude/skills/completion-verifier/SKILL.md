@@ -74,3 +74,72 @@ npm test -- --testPathPattern="batch.test|ErrorHandler.test"
 # Check coverage (optional)
 npm test -- --coverage --testPathPattern="..."
 ```
+
+---
+
+## Self-Audit Pattern
+
+> After implementation, compare results against context.md requirements to verify fulfillment.
+
+### Purpose
+
+According to the "How to write a good spec for AI agents" guide, having AI verify its own work against the spec is a powerful pattern. This helps catch missing items before running tests.
+
+### Trigger
+
+- After each implementation phase
+- Before test execution
+
+### Prompt Example
+
+At completion, verify the following:
+
+> "After implementation, compare your results against the requirements in context.md 
+> and verify each item is fulfilled. 
+> If any requirements are not met, list them."
+
+### Self-Audit Output Format
+
+```yaml
+selfAuditResult:
+  # Requirements fulfillment
+  requirementsMet:
+    - "[REQ-1] User query API ✅"
+    - "[REQ-2] Error handling ✅"
+  requirementsNotMet:
+    - "[REQ-3] Pagination ❌ (not implemented)"
+  
+  # 3-tier boundary check
+  boundaryCheck:
+    neverDoViolations: []          # Critical violations (halt if any)
+    askFirstItems: []              # Items needing approval
+    alwaysDoCompleted:             # Required actions
+      - "lint executed"
+      - "tests passed"
+  
+  # Overall judgment
+  readyForTest: true | false
+  blockers:                        # Blocking reasons if false
+    - "REQ-3 not implemented"
+```
+
+### Workflow Integration
+
+```
+Implementation Phase Complete
+        ↓
+[Self-Audit] Compare against context.md requirements
+        ↓
+    readyForTest?
+     ↓         ↓
+   true      false
+     ↓         ↓
+Run tests   Fix implementation and retry
+```
+
+### Notes
+
+- Self-Audit is a **supplementary check**, not a replacement for actual tests
+- Requirement fulfillment involves subjective judgment; tests provide final verification
+- If `neverDoViolations` exist, halt immediately and report to user
+
