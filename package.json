@@ -10,6 +10,9 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "dev:start": "powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 start -Build",
+    "dev:stop": "powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 stop",
+    "dev:restart": "powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 restart -Build",
     "gateway": "node dist/gateway/index.js",
     "gateway:watch": "bun run src/gateway/index.ts",
     "discord": "node dist/discord-bot.js",

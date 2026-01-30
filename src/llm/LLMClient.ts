@@ -12,6 +12,12 @@ export interface LLMPlanRequest {
   sessionContext?: string;
 }
 
+export interface LLMResponseRequest {
+  message: string;
+  sessionContext?: string;
+  toolContext?: string;
+}
+
 export interface LLMPlanResponse {
   steps: Step[];
   reasoning?: string;
@@ -80,6 +86,35 @@ export class LLMClient {
   }
 
   /**
+   * Generate a direct response using LLM
+   */
+  async generateResponse(request: LLMResponseRequest): Promise<string> {
+    if (!this.provider.isAvailable()) {
+      throw new Error("LLM client not available (API key not configured)");
+    }
+
+    const systemPrompt = this.buildResponseSystemPrompt();
+    const userPrompt = this.buildResponseUserPrompt(request);
+
+    try {
+      const response = await this.provider.chatCompletion({
+        model: this.model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      });
+
+      return response.content.trim();
+    } catch (error) {
+      this.logger.error("LLM response generation failed", { error });
+      throw error;
+    }
+  }
+
+  /**
    * Build system prompt with available tools
    */
   private buildSystemPrompt(availableTools: string[]): string {
@@ -143,6 +178,30 @@ Respond ONLY with valid JSON in this format:
 
     if (request.sessionContext) {
       prompt += `\n\nSession context:\n${request.sessionContext}`;
+    }
+
+    return prompt;
+  }
+
+  /**
+   * Build system prompt for direct response
+   */
+  private buildResponseSystemPrompt(): string {
+    return "You are Moon-Bot, a helpful assistant. Respond to the user's request clearly and concisely. Use any tool context if provided. If you are unsure, say so. Respond in the same language as the user.";
+  }
+
+  /**
+   * Build user prompt for direct response
+   */
+  private buildResponseUserPrompt(request: LLMResponseRequest): string {
+    let prompt = `User request: ${request.message}`;
+
+    if (request.sessionContext) {
+      prompt += `\n\nSession context:\n${request.sessionContext}`;
+    }
+
+    if (request.toolContext) {
+      prompt += `\n\nTool context:\n${request.toolContext}`;
     }
 
     return prompt;

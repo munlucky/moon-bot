@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.log
+*.error.log
 .DS_Store
 .env
 .env.local
@@ -20,3 +21,4 @@ config.json
 .gitignore
 .claude/docs/tasks/
 ~/.moonbot
+.moonbot-dev/

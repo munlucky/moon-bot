@@ -104,3 +104,7 @@
 {"type":"relation","from":"[moonbot]::Component::LLMInfrastructure","to":"moonbot::Component::LLMClient","relationType":"includes"}
 {"type":"relation","from":"[moonbot]::Component::DiscordApprovalHandler","to":"moonbot::Pattern::ApprovalFlow","relationType":"implements"}
 {"type":"relation","from":"moonbot::Component::Cron","to":"moonbot::Component::TaskOrchestrator","relationType":"delegates_to"}
+{"type":"entity","name":"moonbot::Component::Executor","entityType":"component","observations":["LLMClient를 사용해 최종 응답 생성 (assistant/result 메시지가 없을 때)","tool 메시지에서 결과를 모아 toolContext 요약 생성","LLM 미설정/실패 시 fallback 응답 메시지 반환"]}
+{"type":"entity","name":"moonbot::Component::LLMClient","entityType":"component","observations":["generateResponse()로 계획 없이 직접 응답 생성 지원","응답 전용 system/user prompt 추가 (toolContext, sessionContext 포함 가능)"]}
+{"type":"entity","name":"moonbot::Component::TaskOrchestrator","entityType":"component","observations":["기본 taskTimeoutMs를 600000ms(10분)로 상향"]}
+{"type":"entity","name":"moonbot::Component::DevScripts","entityType":"component","observations":["개발용 start/stop/restart 스크립트 추가 (scripts/dev.ps1)","PID 파일은 .moonbot-dev/에 저장","stdout/stderr 로그 분리: gateway.log/gateway.error.log, discord-bot.log/discord-bot.error.log","package.json에 dev:start/dev:stop/dev:restart 스크립트 추가"]}

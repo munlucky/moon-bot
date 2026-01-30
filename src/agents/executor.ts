@@ -6,6 +6,7 @@ import { Planner, type Step } from "./planner.js";
 import { Replanner, type ToolFailure, type ExecutionContext } from "./replanner.js";
 import type { Toolkit } from "../tools/index.js";
 import type { ToolRuntime } from "../tools/runtime/ToolRuntime.js";
+import { LLMClient } from "../llm/LLMClient.js";
 
 export interface ExecutionResult {
   success: boolean;
@@ -28,6 +29,7 @@ export class Executor {
   private toolkit: Toolkit;
   private replanner: Replanner;
   private toolRuntime: ToolRuntime | null = null;
+  private llmClient: LLMClient;
 
   constructor(config: SystemConfig, toolkit: Toolkit) {
     this.config = config;
@@ -35,6 +37,7 @@ export class Executor {
     this.layerLogger = this.logger.forLayer("executor");
     this.toolLogger = this.logger.forLayer("tools");
     this.toolkit = toolkit;
+    this.llmClient = new LLMClient(config.llm);
 
     // Get tool runtime if available
     this.toolRuntime = toolkit.getRuntime() ?? null;
@@ -101,6 +104,10 @@ export class Executor {
         completedSteps.add(step.id);
         outputs.set(step.id, stepResult.result);
 
+        if (stepResult.message) {
+          messages.push(stepResult.message);
+        }
+
         // Don't send step completion messages to avoid spam
         // Only send final result
 
@@ -127,6 +134,11 @@ export class Executor {
     const success = errors.size === 0;
     const recoveryStats = this.replanner.getStats();
 
+    if (success && !this.hasFinalResponse(messages)) {
+      const responseMessage = await this.generateAssistantResponse(message, messages);
+      messages.push(responseMessage);
+    }
+
     this.layerLogger.logOutput("execute", {
       success,
       stepsCompleted: completedSteps.size,
@@ -152,12 +164,17 @@ export class Executor {
   ): Promise<{
     success: boolean;
     result?: unknown;
+    message?: SessionMessage | null;
     error?: Error;
     abort?: boolean;
   }> {
     try {
       const toolMessage = await this.executeStep(step, sessionId, agentId, userId);
-      return { success: true, result: { completed: true } };
+      return {
+        success: true,
+        result: toolMessage?.metadata?.result ?? toolMessage ?? { completed: true },
+        message: toolMessage ?? null,
+      };
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
 
@@ -373,5 +390,87 @@ export class Executor {
    */
   getRemainingTime(): number {
     return this.replanner.getRemainingTime();
+  }
+
+  private hasFinalResponse(messages: SessionMessage[]): boolean {
+    return messages.some((m) => m.type === "assistant" || m.type === "result");
+  }
+
+  private async generateAssistantResponse(
+    message: string,
+    messages: SessionMessage[]
+  ): Promise<SessionMessage> {
+    const toolContext = this.buildToolContext(messages);
+
+    if (!this.llmClient.isAvailable()) {
+      return {
+        type: "assistant",
+        content: "응답 생성을 위한 LLM이 설정되어 있지 않습니다.",
+        timestamp: Date.now(),
+        metadata: { fallback: true },
+      };
+    }
+
+    try {
+      const content = await this.llmClient.generateResponse({
+        message,
+        toolContext,
+      });
+
+      return {
+        type: "assistant",
+        content,
+        timestamp: Date.now(),
+        metadata: { generated: true },
+      };
+    } catch (error) {
+      this.logger.warn("Failed to generate assistant response, using fallback", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return {
+        type: "assistant",
+        content: "응답 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        timestamp: Date.now(),
+        metadata: { fallback: true },
+      };
+    }
+  }
+
+  private buildToolContext(messages: SessionMessage[]): string | undefined {
+    const toolMessages = messages.filter((m) => m.type === "tool");
+    if (toolMessages.length === 0) {
+      return undefined;
+    }
+
+    const summaries = toolMessages.map((m) => {
+      const toolId = typeof m.metadata?.toolId === "string"
+        ? (m.metadata?.toolId as string)
+        : "unknown-tool";
+      const result = m.metadata?.result;
+      if (result === undefined) {
+        return `- ${toolId}: (no output)`;
+      }
+
+      return `- ${toolId}: ${this.formatToolResult(result)}`;
+    });
+
+    return summaries.join("\n");
+  }
+
+  private formatToolResult(result: unknown, maxLength: number = 2000): string {
+    let text: string;
+
+    try {
+      text = typeof result === "string" ? result : JSON.stringify(result);
+    } catch {
+      text = String(result);
+    }
+
+    if (text.length > maxLength) {
+      return text.slice(0, maxLength) + "...";
+    }
+
+    return text;
   }
 }

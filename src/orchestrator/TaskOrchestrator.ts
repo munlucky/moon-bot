@@ -18,7 +18,7 @@ import type { ExecutionResult } from "../agents/executor.js";
 import type { ToolRuntime } from "../tools/runtime/ToolRuntime.js";
 
 const DEFAULT_CONFIG: OrchestratorConfig = {
-  taskTimeoutMs: 30000, // 30 seconds
+  taskTimeoutMs: 600000, // 10 minutes
   maxQueueSizePerChannel: 100,
   debugEvents: false,
 };
