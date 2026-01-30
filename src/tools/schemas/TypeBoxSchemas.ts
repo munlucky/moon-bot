@@ -582,6 +582,135 @@ export const ProcessListResultSchema = Type.Object({
 export type ProcessListResult = Static<typeof ProcessListResultSchema>;
 
 // ============================================================================
+// Claude Code Schemas
+// ============================================================================
+
+/**
+ * Input schema for claude_code.start tool
+ */
+export const ClaudeCodeStartInputSchema = Type.Object({
+  workingDirectory: Type.String({
+    description: "Working directory for Claude CLI execution",
+  }),
+  prompt: Type.Optional(
+    Type.String({ description: "Initial prompt to send to Claude CLI" })
+  ),
+  env: Type.Optional(
+    Type.Record(Type.String(), Type.String(), {
+      description: "Additional environment variables",
+    })
+  ),
+  timeout: Type.Optional(
+    Type.Integer({
+      minimum: 60,
+      maximum: 7200,
+      default: 1800,
+      description: "Session timeout in seconds (default: 1800)",
+    })
+  ),
+  useScreenCapture: Type.Optional(
+    Type.Boolean({
+      default: false,
+      description:
+        "If true, indicates screen capture mode (caller should use nodes.screen_snap)",
+    })
+  ),
+});
+
+export type ClaudeCodeStartInput = Static<typeof ClaudeCodeStartInputSchema>;
+
+/**
+ * Output schema for claude_code.start tool
+ */
+export const ClaudeCodeStartResultSchema = Type.Object({
+  sessionId: Type.String({ description: "Session ID for subsequent operations" }),
+  pid: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+  status: ProcessStatusSchema,
+  useScreenCapture: Type.Boolean(),
+  workingDirectory: Type.String(),
+});
+
+export type ClaudeCodeStartResult = Static<typeof ClaudeCodeStartResultSchema>;
+
+/**
+ * Input schema for claude_code.write tool
+ */
+export const ClaudeCodeWriteInputSchema = Type.Object({
+  sessionId: Type.String({ description: "Session ID to write to" }),
+  input: Type.String({
+    description: "Input string to send to Claude CLI (include \\n for newline)",
+  }),
+});
+
+export type ClaudeCodeWriteInput = Static<typeof ClaudeCodeWriteInputSchema>;
+
+/**
+ * Output schema for claude_code.write tool
+ */
+export const ClaudeCodeWriteResultSchema = Type.Object({
+  success: Type.Boolean(),
+  bytesWritten: Type.Integer({ minimum: 0 }),
+  useScreenCapture: Type.Boolean({
+    description: "If true, caller should capture screen via nodes.screen_snap",
+  }),
+});
+
+export type ClaudeCodeWriteResult = Static<typeof ClaudeCodeWriteResultSchema>;
+
+/**
+ * Input schema for claude_code.stop tool
+ */
+export const ClaudeCodeStopInputSchema = Type.Object({
+  sessionId: Type.String({ description: "Session ID to stop" }),
+  signal: Type.Optional(
+    Type.Union(
+      [Type.Literal("SIGTERM"), Type.Literal("SIGKILL"), Type.Literal("SIGINT")],
+      { default: "SIGTERM" }
+    )
+  ),
+});
+
+export type ClaudeCodeStopInput = Static<typeof ClaudeCodeStopInputSchema>;
+
+/**
+ * Output schema for claude_code.stop tool
+ */
+export const ClaudeCodeStopResultSchema = Type.Object({
+  success: Type.Boolean(),
+  status: ProcessStatusSchema,
+  exitCode: Type.Union([Type.Integer(), Type.Null()]),
+  message: Type.String(),
+  lastOutput: Type.Optional(Type.String({ description: "Last output before termination" })),
+});
+
+export type ClaudeCodeStopResult = Static<typeof ClaudeCodeStopResultSchema>;
+
+/**
+ * Input schema for claude_code.poll tool
+ */
+export const ClaudeCodePollInputSchema = Type.Object({
+  sessionId: Type.String({ description: "Session ID to poll" }),
+  maxLines: Type.Optional(
+    Type.Integer({ minimum: 1, maximum: 1000, default: 100 })
+  ),
+});
+
+export type ClaudeCodePollInput = Static<typeof ClaudeCodePollInputSchema>;
+
+/**
+ * Output schema for claude_code.poll tool
+ */
+export const ClaudeCodePollResultSchema = Type.Object({
+  lines: Type.Array(Type.String()),
+  hasMore: Type.Boolean(),
+  status: ProcessStatusSchema,
+  exitCode: Type.Union([Type.Integer(), Type.Null()]),
+  useScreenCapture: Type.Boolean(),
+});
+
+export type ClaudeCodePollResult = Static<typeof ClaudeCodePollResultSchema>;
+
+// ============================================================================
 // Utility Functions
 // ============================================================================
 

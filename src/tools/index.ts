@@ -30,6 +30,9 @@ import { BrowserTool, createBrowserTools } from "./browser/BrowserTool.js";
 import { ProcessSessionManager } from "./process/ProcessSessionManager.js";
 import { createProcessTools } from "./process/ProcessTool.js";
 
+// Claude Code Tools
+import { ClaudeCodeSessionManager, createClaudeCodeTools } from "./claude-code/index.js";
+
 export class Toolkit {
   private tools = new Map<string, ToolSpec>();
   private logger: Logger;
@@ -210,9 +213,28 @@ export async function createGatewayTools(
   // Store process session manager reference for cleanup
   (toolkit as any).processSessionManager = processSessionManager;
 
+  // Claude Code tools (wraps ProcessSessionManager for Claude CLI sessions)
+  const claudeCodeSessionManager = new ClaudeCodeSessionManager(
+    processSessionManager,
+    {
+      defaultTimeout: 1800, // 30 minutes
+      maxSessionsPerUser: 2,
+    }
+  );
+
+  candidateTools.push(
+    ...createClaudeCodeTools(claudeCodeSessionManager, approvalManager)
+  );
+
+  // Store claude code session manager reference for cleanup
+  (toolkit as any).claudeCodeSessionManager = claudeCodeSessionManager;
+
   // Set up periodic session cleanup
   setInterval(() => {
     processSessionManager.cleanupExpired().catch(() => {
+      // Ignore cleanup errors
+    });
+    claudeCodeSessionManager.cleanupExpired().catch(() => {
       // Ignore cleanup errors
     });
   }, 5 * 60 * 1000); // Every 5 minutes
