@@ -706,6 +706,15 @@ export const ClaudeCodePollResultSchema = Type.Object({
   status: ProcessStatusSchema,
   exitCode: Type.Union([Type.Integer(), Type.Null()]),
   useScreenCapture: Type.Boolean(),
+  screenCaptureData: Type.Optional(
+    Type.String({ description: "Base64-encoded PNG image data from screen capture" })
+  ),
+  nodeId: Type.Optional(
+    Type.String({ description: "Remote node ID when useScreenCapture is true" })
+  ),
+  nodeName: Type.Optional(
+    Type.String({ description: "Remote node name when useScreenCapture is true" })
+  ),
 });
 
 export type ClaudeCodePollResult = Static<typeof ClaudeCodePollResultSchema>;

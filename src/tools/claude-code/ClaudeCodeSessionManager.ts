@@ -9,6 +9,7 @@ import {
   ProcessSessionManager,
   type ProcessSession,
 } from "../process/ProcessSessionManager.js";
+import type { NodeExecutor } from "../nodes/NodeExecutor.js";
 
 const execAsync = promisify(exec);
 
@@ -33,9 +34,14 @@ export interface ClaudeCodeSessionManagerConfig {
   claudeCliPath?: string;
   defaultTimeout?: number;
   maxSessionsPerUser?: number;
+  nodeExecutor?: NodeExecutor;
 }
 
-const DEFAULT_CONFIG: Required<ClaudeCodeSessionManagerConfig> = {
+type ClaudeCodeSessionManagerConfigInternal = Omit<ClaudeCodeSessionManagerConfig, 'nodeExecutor'> & {
+  nodeExecutor?: NodeExecutor;
+};
+
+const DEFAULT_CONFIG: Required<Omit<ClaudeCodeSessionManagerConfigInternal, 'nodeExecutor'>> = {
   claudeCliPath: "claude",
   defaultTimeout: 1800,
   maxSessionsPerUser: 2,
@@ -48,9 +54,10 @@ const DEFAULT_CONFIG: Required<ClaudeCodeSessionManagerConfig> = {
 export class ClaudeCodeSessionManager {
   private sessions = new Map<string, ClaudeCodeSession>();
   private userSessionCount = new Map<string, number>();
-  private config: Required<ClaudeCodeSessionManagerConfig>;
+  private config: Required<Omit<ClaudeCodeSessionManagerConfigInternal, 'nodeExecutor'>>;
   private processSessionManager: ProcessSessionManager;
   private claudeCliAvailable: boolean | null = null;
+  private nodeExecutor?: NodeExecutor;
 
   constructor(
     processSessionManager: ProcessSessionManager,
@@ -58,6 +65,7 @@ export class ClaudeCodeSessionManager {
   ) {
     this.processSessionManager = processSessionManager;
     this.config = { ...DEFAULT_CONFIG, ...config };
+    this.nodeExecutor = config.nodeExecutor;
   }
 
   /**
@@ -398,5 +406,95 @@ export class ClaudeCodeSessionManager {
     for (const sessionId of sessionIds) {
       await this.stopSession(sessionId, "SIGKILL");
     }
+  }
+
+  /**
+   * Check if screen capture is available via nodes
+   * @param userId - User ID to check
+   * @returns true if at least one paired node with screen capture capability exists
+   */
+  hasScreenCaptureAvailable(userId: string): boolean {
+    return this.nodeExecutor?.hasScreenCaptureAvailable(userId) ?? false;
+  }
+
+  /**
+   * Get the screen capture node for a user
+   * @param userId - User ID
+   * @returns Node connection info or undefined
+   */
+  getScreenCaptureNode(userId: string): {
+    nodeId: string;
+    nodeName: string;
+  } | undefined {
+    const node = this.nodeExecutor?.getScreenCaptureNode(userId);
+    if (!node) {
+      return undefined;
+    }
+    return {
+      nodeId: node.nodeId,
+      nodeName: node.nodeName,
+    };
+  }
+
+  /**
+   * Check if screen capture consent is granted
+   * @param userId - User ID
+   * @param nodeId - Optional node ID
+   * @returns true if consent is granted
+   */
+  hasScreenCaptureConsent(userId: string, nodeId?: string): boolean {
+    return this.nodeExecutor?.hasScreenCaptureConsent(userId, nodeId) ?? false;
+  }
+
+  /**
+   * Grant screen capture consent
+   * @param userId - User ID
+   * @param nodeId - Node ID
+   * @param durationMs - Optional duration in milliseconds
+   */
+  grantScreenCaptureConsent(
+    userId: string,
+    nodeId: string,
+    durationMs?: number
+  ): void {
+    if (!this.nodeExecutor) {
+      throw new Error("NODE_EXECUTOR_NOT_AVAILABLE: NodeExecutor not configured");
+    }
+    this.nodeExecutor.grantScreenCaptureConsent(userId, nodeId, durationMs);
+  }
+
+  /**
+   * Request screen capture from a node
+   * @param userId - User ID
+   * @param nodeId - Optional node ID
+   * @param timeoutMs - Optional timeout in milliseconds
+   * @returns Promise that resolves with screen capture result
+   */
+  async requestScreenCapture(
+    userId: string,
+    nodeId?: string,
+    timeoutMs?: number
+  ): Promise<{
+    success: boolean;
+    nodeId: string;
+    nodeName: string;
+    imageData?: string;
+    format: "png";
+  }> {
+    if (!this.nodeExecutor) {
+      throw new Error("NODE_EXECUTOR_NOT_AVAILABLE: NodeExecutor not configured");
+    }
+    const result = await this.nodeExecutor.requestScreenCapture(
+      userId,
+      nodeId,
+      timeoutMs
+    );
+    return {
+      success: result.success,
+      nodeId: result.nodeId,
+      nodeName: result.nodeName,
+      imageData: result.imageData,
+      format: result.format,
+    };
   }
 }

@@ -10,6 +10,13 @@ export type {
 export { NodeCommandValidator } from "./NodeCommandValidator.js";
 export type { ValidationResult } from "./NodeCommandValidator.js";
 
+export { NodeExecutor } from "./NodeExecutor.js";
+export type {
+  NodeExecutionResult,
+  ScreenCaptureResult,
+  NodeExecutorConfig,
+} from "./NodeExecutor.js";
+
 export type {
   NodeConnectionStatus,
   NodeInfo,

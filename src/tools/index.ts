@@ -34,7 +34,11 @@ import { createProcessTools } from "./process/ProcessTool.js";
 import { ClaudeCodeSessionManager, createClaudeCodeTools } from "./claude-code/index.js";
 
 // Nodes Tools
-import { NodeSessionManager, NodeCommandValidator } from "./nodes/index.js";
+import {
+  NodeSessionManager,
+  NodeCommandValidator,
+  NodeExecutor,
+} from "./nodes/index.js";
 import { createNodesTools } from "./nodes/NodesTool.js";
 
 export class Toolkit {
@@ -214,12 +218,42 @@ export async function createGatewayTools(
     ...createProcessTools(processSessionManager, approvalManager)
   );
 
+  // Nodes tools (for Node Companion integration)
+  // Must be created before ClaudeCodeSessionManager
+  const nodeSessionManager = new NodeSessionManager({
+    pairingCodeTtlMs: 5 * 60 * 1000, // 5 minutes
+    sessionTimeoutMs: 60 * 60 * 1000, // 1 hour
+    maxNodesPerUser: 5,
+  });
+
+  const nodeCommandValidator = new NodeCommandValidator({
+    maxOutputSize: 10 * 1024 * 1024, // 10MB
+    maxArgvLength: 10000,
+  });
+
+  // Create NodeExecutor for Claude Code integration
+  const nodeExecutor = new NodeExecutor(nodeSessionManager, {
+    defaultTimeoutMs: 30000, // 30 seconds
+    retry: {
+      maxRetries: 2,
+      initialDelayMs: 1000,
+      maxDelayMs: 10000,
+      backoffMultiplier: 2,
+    },
+  });
+
+  candidateTools.push(
+    ...createNodesTools(nodeSessionManager, nodeCommandValidator)
+  );
+
   // Claude Code tools (wraps ProcessSessionManager for Claude CLI sessions)
+  // Now can use NodeExecutor for screen capture integration
   const claudeCodeSessionManager = new ClaudeCodeSessionManager(
     processSessionManager,
     {
       defaultTimeout: 1800, // 30 minutes
       maxSessionsPerUser: 2,
+      nodeExecutor, // Pass NodeExecutor for screen capture integration
     }
   );
 
@@ -235,29 +269,6 @@ export async function createGatewayTools(
     claudeCodeSessionManager.cleanupExpired().catch(() => {
       // Ignore cleanup errors
     });
-  }, 5 * 60 * 1000); // Every 5 minutes
-
-  // Nodes tools (for Node Companion integration)
-  const nodeSessionManager = new NodeSessionManager({
-    pairingCodeTtlMs: 5 * 60 * 1000, // 5 minutes
-    sessionTimeoutMs: 60 * 60 * 1000, // 1 hour
-    maxNodesPerUser: 5,
-  });
-
-  const nodeCommandValidator = new NodeCommandValidator({
-    maxOutputSize: 10 * 1024 * 1024, // 10MB
-    maxArgvLength: 10000,
-  });
-
-  candidateTools.push(
-    ...createNodesTools(nodeSessionManager, nodeCommandValidator)
-  );
-
-  // Store node session manager reference for cleanup
-  (toolkit as any).nodeSessionManager = nodeSessionManager;
-
-  // Set up periodic node session cleanup
-  setInterval(() => {
     nodeSessionManager.cleanupExpired();
   }, 5 * 60 * 1000); // Every 5 minutes
 
@@ -265,6 +276,7 @@ export async function createGatewayTools(
   (toolkit as any).processSessionManager = processSessionManager;
   (toolkit as any).claudeCodeSessionManager = claudeCodeSessionManager;
   (toolkit as any).nodeSessionManager = nodeSessionManager;
+  (toolkit as any).nodeExecutor = nodeExecutor;
 
   // Filter tools by profile and register
   const filteredTools = filterToolsByProfile(candidateTools, profile);

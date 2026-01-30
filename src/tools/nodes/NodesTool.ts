@@ -275,6 +275,183 @@ export function createNodesScreenSnapTool(
 }
 
 /**
+ * Create nodes.consent.grant tool
+ */
+export function createNodesConsentGrantTool(
+  sessionManager: NodeSessionManager
+): ToolSpec<unknown, unknown> {
+  return {
+    id: "nodes.consent.grant",
+    description: "Grant screen capture consent for a paired Node Companion",
+    schema: {
+      input: {
+        type: "object",
+        properties: {
+          nodeId: {
+            type: "string",
+            description: "Node ID to grant consent for",
+          },
+          durationMs: {
+            type: "number",
+            description: "Consent duration in milliseconds (optional, defaults to indefinite)",
+          },
+        },
+        required: ["nodeId"],
+      },
+      output: {
+        type: "object",
+        properties: {
+          success: { type: "boolean" },
+          nodeId: { type: "string" },
+          grantedAt: { type: "number" },
+          expiresAt: { type: "number" },
+        },
+      },
+    },
+    run: async (input: unknown, context: ToolContext): Promise<ToolResult> => {
+      const userId = context.userId ?? "default";
+      const params = input as { nodeId: string; durationMs?: number };
+
+      try {
+        const node = sessionManager.getNode(params.nodeId);
+
+        if (!node || node.userId !== userId) {
+          return ToolResultBuilder.failure("NODE_NOT_FOUND", "Node not found or access denied");
+        }
+
+        sessionManager.grantScreenCaptureConsent(params.nodeId, params.durationMs);
+
+        return ToolResultBuilder.success({
+          success: true,
+          nodeId: params.nodeId,
+          grantedAt: Date.now(),
+          expiresAt: params.durationMs ? Date.now() + params.durationMs : undefined,
+        });
+      } catch (error) {
+        return ToolResultBuilder.failure(
+          "CONSENT_GRANT_ERROR",
+          error instanceof Error ? error.message : "Failed to grant consent"
+        );
+      }
+    },
+  };
+}
+
+/**
+ * Create nodes.consent.revoke tool
+ */
+export function createNodesConsentRevokeTool(
+  sessionManager: NodeSessionManager
+): ToolSpec<unknown, unknown> {
+  return {
+    id: "nodes.consent.revoke",
+    description: "Revoke screen capture consent for a paired Node Companion",
+    schema: {
+      input: {
+        type: "object",
+        properties: {
+          nodeId: {
+            type: "string",
+            description: "Node ID to revoke consent for",
+          },
+        },
+        required: ["nodeId"],
+      },
+      output: {
+        type: "object",
+        properties: {
+          success: { type: "boolean" },
+          nodeId: { type: "string" },
+        },
+      },
+    },
+    run: async (input: unknown, context: ToolContext): Promise<ToolResult> => {
+      const userId = context.userId ?? "default";
+      const params = input as { nodeId: string };
+
+      try {
+        const node = sessionManager.getNode(params.nodeId);
+
+        if (!node || node.userId !== userId) {
+          return ToolResultBuilder.failure("NODE_NOT_FOUND", "Node not found or access denied");
+        }
+
+        sessionManager.revokeScreenCaptureConsent(params.nodeId);
+
+        return ToolResultBuilder.success({
+          success: true,
+          nodeId: params.nodeId,
+        });
+      } catch (error) {
+        return ToolResultBuilder.failure(
+          "CONSENT_REVOKE_ERROR",
+          error instanceof Error ? error.message : "Failed to revoke consent"
+        );
+      }
+    },
+  };
+}
+
+/**
+ * Create nodes.consent.check tool
+ */
+export function createNodesConsentCheckTool(
+  sessionManager: NodeSessionManager
+): ToolSpec<unknown, unknown> {
+  return {
+    id: "nodes.consent.check",
+    description: "Check screen capture consent status for a paired Node Companion",
+    schema: {
+      input: {
+        type: "object",
+        properties: {
+          nodeId: {
+            type: "string",
+            description: "Node ID to check consent for",
+          },
+        },
+        required: ["nodeId"],
+      },
+      output: {
+        type: "object",
+        properties: {
+          nodeId: { type: "string" },
+          hasConsent: { type: "boolean" },
+          grantedAt: { type: "number" },
+          expiresAt: { type: "number" },
+        },
+      },
+    },
+    run: async (input: unknown, context: ToolContext): Promise<ToolResult> => {
+      const userId = context.userId ?? "default";
+      const params = input as { nodeId: string };
+
+      try {
+        const node = sessionManager.getNode(params.nodeId);
+
+        if (!node || node.userId !== userId) {
+          return ToolResultBuilder.failure("NODE_NOT_FOUND", "Node not found or access denied");
+        }
+
+        const hasConsent = sessionManager.hasScreenCaptureConsent(params.nodeId);
+
+        return ToolResultBuilder.success({
+          nodeId: params.nodeId,
+          hasConsent,
+          grantedAt: node.screenCaptureConsent.grantedAt,
+          expiresAt: node.screenCaptureConsent.expiresAt,
+        });
+      } catch (error) {
+        return ToolResultBuilder.failure(
+          "CONSENT_CHECK_ERROR",
+          error instanceof Error ? error.message : "Failed to check consent"
+        );
+      }
+    },
+  };
+}
+
+/**
  * Create all nodes tools
  */
 export function createNodesTools(
@@ -285,5 +462,8 @@ export function createNodesTools(
     createNodesStatusTool(sessionManager),
     createNodesRunTool(sessionManager, commandValidator),
     createNodesScreenSnapTool(sessionManager),
+    createNodesConsentGrantTool(sessionManager),
+    createNodesConsentRevokeTool(sessionManager),
+    createNodesConsentCheckTool(sessionManager),
   ];
 }

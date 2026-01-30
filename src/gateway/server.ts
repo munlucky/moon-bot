@@ -233,11 +233,23 @@ export class GatewayServer {
       this.executor = new Executor(this.config, this.toolkit);
     }
 
+    // Set up NodeExecutor RPC sender
+    // NodeExecutor is stored in toolkit by createGatewayTools
+    const nodeExecutor = (this.toolkit as any).nodeExecutor;
+    if (nodeExecutor) {
+      nodeExecutor.setRpcSender(
+        (nodeId: string, method: string, params: unknown, options?: { timeoutMs?: number }) =>
+          this.sendToNodeAndWait(nodeId, method, params, options)
+      );
+      this.logger.info("NodeExecutor RPC sender configured");
+    }
+
     this.logger.info("Dependencies initialized", {
       hasToolkit: !!this.toolkit,
       hasToolRuntime: !!this.toolRuntime,
       hasSessionManager: !!this.sessionManager,
       hasExecutor: !!this.executor,
+      hasNodeExecutor: !!nodeExecutor,
     });
   }
 
