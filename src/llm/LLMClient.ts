@@ -1,6 +1,6 @@
 // LLM Client for Planner integration
 
-import type { Step } from "../types/index.js";
+import type { Step, ToolDefinition } from "../types/index.js";
 import type { LLMConfig } from "../types/index.js";
 import { createLogger, type Logger } from "../utils/logger.js";
 import { LLMProviderFactory } from "./LLMProviderFactory.js";
@@ -8,7 +8,10 @@ import type { ILLMProvider } from "./types.js";
 
 export interface LLMPlanRequest {
   message: string;
-  availableTools: string[];
+  /** @deprecated Use toolDefinitions instead */
+  availableTools?: string[];
+  /** Tool definitions with schema for accurate parameter generation */
+  toolDefinitions?: ToolDefinition[];
   sessionContext?: string;
 }
 
@@ -62,7 +65,10 @@ export class LLMClient {
       throw new Error("LLM client not available (API key not configured)");
     }
 
-    const systemPrompt = this.buildSystemPrompt(request.availableTools);
+    const systemPrompt = this.buildSystemPrompt(
+      request.toolDefinitions,
+      request.availableTools
+    );
 
     try {
       const response = await this.provider.chatCompletion({
@@ -116,22 +122,37 @@ export class LLMClient {
 
   /**
    * Build system prompt with available tools
+   * @param toolDefinitions Full tool definitions with schema (preferred)
+   * @param availableTools Legacy tool ID list (fallback)
    */
-  private buildSystemPrompt(availableTools: string[]): string {
-    const toolList = availableTools.length > 0
-      ? availableTools.map((t) => `- \`${t}\``).join("\n")
-      : "(No tools available)";
+  private buildSystemPrompt(
+    toolDefinitions?: ToolDefinition[],
+    availableTools?: string[]
+  ): string {
+    let toolSection: string;
+
+    if (toolDefinitions && toolDefinitions.length > 0) {
+      // Use full tool definitions with schema
+      toolSection = toolDefinitions
+        .map((tool) => this.formatToolDefinition(tool))
+        .join("\n\n");
+    } else if (availableTools && availableTools.length > 0) {
+      // Fallback to simple tool ID list
+      toolSection = availableTools.map((t) => `- \`${t}\``).join("\n");
+    } else {
+      toolSection = "(No tools available)";
+    }
 
     return `You are Moon-Bot, an AI agent that breaks down user requests into executable steps.
 
 ## Available Tools
-${toolList}
+${toolSection}
 
 ## Your Task
 Given a user request, create a sequence of steps to accomplish it. Each step should:
 - Have a unique ID (use kebab-case)
 - Describe what the step does
-- Optionally specify a tool to use
+- Optionally specify a tool to use with its input parameters
 - Optionally list dependencies on previous step IDs
 
 ## Step Format
@@ -139,6 +160,7 @@ Each step is a JSON object with:
 - \`id\`: unique identifier (string)
 - \`description\`: what this step does (string)
 - \`toolId\`: (optional) the tool to use
+- \`input\`: (optional) input parameters for the tool (must match the tool's schema)
 - \`dependsOn\`: (optional) array of step IDs this step depends on
 
 ## Response Format
@@ -149,7 +171,8 @@ Respond ONLY with valid JSON in this format:
     {
       "id": "step-1",
       "description": "First step description",
-      "toolId": "some.tool"
+      "toolId": "some.tool",
+      "input": { "param1": "value1" }
     },
     {
       "id": "step-2",
@@ -164,10 +187,36 @@ Respond ONLY with valid JSON in this format:
 ## Guidelines
 - Keep plans simple and focused (3-5 steps maximum)
 - Only use tools from the available list
-- If no tool is needed, omit the \`toolId\` field
+- When using a tool, provide the \`input\` object with required parameters
+- If no tool is needed, omit the \`toolId\` and \`input\` fields
 - Always end with a response step (no toolId)
 - Ensure step IDs are unique and descriptive
 `;
+  }
+
+  /**
+   * Format a single tool definition for the prompt
+   */
+  private formatToolDefinition(tool: ToolDefinition): string {
+    const schema = tool.schema as {
+      type?: string;
+      properties?: Record<string, { type?: string; description?: string; enum?: string[] }>;
+      required?: string[];
+    };
+
+    let result = `### \`${tool.name}\`\n${tool.description}`;
+
+    if (schema.properties) {
+      result += "\n\n**Parameters:**";
+      for (const [name, prop] of Object.entries(schema.properties)) {
+        const required = schema.required?.includes(name) ? " (required)" : "";
+        const typeStr = prop.enum ? `enum[${prop.enum.join(", ")}]` : prop.type ?? "any";
+        const desc = prop.description ? ` - ${prop.description}` : "";
+        result += `\n- \`${name}\`: ${typeStr}${required}${desc}`;
+      }
+    }
+
+    return result;
   }
 
   /**
@@ -243,6 +292,7 @@ Respond ONLY with valid JSON in this format:
           id: s.id,
           description: s.description,
           toolId: s.toolId as string | undefined,
+          input: s.input as unknown,
           dependsOn: s.dependsOn as string[] | undefined,
         };
       });

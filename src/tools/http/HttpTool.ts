@@ -2,6 +2,7 @@
 
 import type { ToolSpec } from "../../types/index.js";
 import { SsrfGuard } from "./SsrfGuard.js";
+import { ToolResultBuilder } from "../runtime/ToolResultBuilder.js";
 
 interface HttpRequestInput {
   method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS";
@@ -117,28 +118,22 @@ export function createHttpRequestTool(): ToolSpec<HttpRequestInput, HttpResponse
         if (input.headers) {
           const headerCheck = validateHeaders(input.headers);
           if (!headerCheck.valid) {
-            return {
-              ok: false,
-              error: {
-                code: "INVALID_HEADERS",
-                message: headerCheck.reason ?? "Invalid headers",
-              },
-              meta: { durationMs: Date.now() - startTime },
-            };
+            return ToolResultBuilder.failureWithDuration(
+              "INVALID_HEADERS",
+              headerCheck.reason ?? "Invalid headers",
+              Date.now() - startTime
+            );
           }
         }
 
         // SSRF check
         const ssrfCheck = SsrfGuard.checkUrl(input.url);
         if (!ssrfCheck.allowed) {
-          return {
-            ok: false,
-            error: {
-              code: "BLOCKED_URL",
-              message: ssrfCheck.reason ?? "URL is blocked by security policy",
-            },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "BLOCKED_URL",
+            ssrfCheck.reason ?? "URL is blocked by security policy",
+            Date.now() - startTime
+          );
         }
 
         // Build URL with query params
@@ -178,48 +173,34 @@ export function createHttpRequestTool(): ToolSpec<HttpRequestInput, HttpResponse
         // Check content length
         const contentLength = response.headers.get("content-length");
         if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_SIZE) {
-          return {
-            ok: false,
-            error: {
-              code: "SIZE_LIMIT",
-              message: `Response too large: ${contentLength} bytes (max: ${MAX_RESPONSE_SIZE})`,
-            },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "SIZE_LIMIT",
+            `Response too large: ${contentLength} bytes (max: ${MAX_RESPONSE_SIZE})`,
+            Date.now() - startTime
+          );
         }
 
         // Get body with size limit
         const body = await response.text();
         if (body.length > MAX_RESPONSE_SIZE) {
-          return {
-            ok: false,
-            error: {
-              code: "SIZE_LIMIT",
-              message: `Response body exceeds size limit`,
-            },
-            meta: { durationMs: Date.now() - startTime, truncated: true },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "SIZE_LIMIT",
+            "Response body exceeds size limit",
+            Date.now() - startTime,
+            { truncated: true }
+          );
         }
 
-        return {
-          ok: true,
-          data: {
-            status: response.status,
-            statusText: response.statusText,
-            headers,
-            body,
-          },
-          meta: { durationMs: Date.now() - startTime },
-        };
+        return ToolResultBuilder.success(
+          { status: response.status, statusText: response.statusText, headers, body },
+          { durationMs: Date.now() - startTime }
+        );
       } catch (error) {
-        return {
-          ok: false,
-          error: {
-            code: "HTTP_ERROR",
-            message: error instanceof Error ? error.message : "HTTP request failed",
-          },
-          meta: { durationMs: Date.now() - startTime },
-        };
+        return ToolResultBuilder.failureWithDuration(
+          "HTTP_ERROR",
+          error instanceof Error ? error.message : "HTTP request failed",
+          Date.now() - startTime
+        );
       }
     },
   };
@@ -248,14 +229,11 @@ export function createHttpDownloadTool(): ToolSpec<HttpDownloadInput, HttpDownlo
         // SSRF check
         const ssrfCheck = SsrfGuard.checkUrl(input.url);
         if (!ssrfCheck.allowed) {
-          return {
-            ok: false,
-            error: {
-              code: "BLOCKED_URL",
-              message: ssrfCheck.reason ?? "URL is blocked by security policy",
-            },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "BLOCKED_URL",
+            ssrfCheck.reason ?? "URL is blocked by security policy",
+            Date.now() - startTime
+          );
         }
 
         // Validate destination path
@@ -263,14 +241,11 @@ export function createHttpDownloadTool(): ToolSpec<HttpDownloadInput, HttpDownlo
         const pathValidation = PathValidator.validate(input.destPath, ctx.workspaceRoot);
 
         if (!pathValidation.valid) {
-          return {
-            ok: false,
-            error: {
-              code: "INVALID_PATH",
-              message: pathValidation.error ?? "Invalid destination path",
-            },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "INVALID_PATH",
+            pathValidation.error ?? "Invalid destination path",
+            Date.now() - startTime
+          );
         }
 
         // Set timeout
@@ -284,14 +259,11 @@ export function createHttpDownloadTool(): ToolSpec<HttpDownloadInput, HttpDownlo
         clearTimeout(timeoutId);
 
         if (!response.ok) {
-          return {
-            ok: false,
-            error: {
-              code: "HTTP_ERROR",
-              message: `HTTP ${response.status}: ${response.statusText}`,
-            },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "HTTP_ERROR",
+            `HTTP ${response.status}: ${response.statusText}`,
+            Date.now() - startTime
+          );
         }
 
         // Check content length
@@ -299,51 +271,37 @@ export function createHttpDownloadTool(): ToolSpec<HttpDownloadInput, HttpDownlo
         const maxSize = ctx.policy.maxBytes;
 
         if (contentLength && parseInt(contentLength, 10) > maxSize) {
-          return {
-            ok: false,
-            error: {
-              code: "SIZE_LIMIT",
-              message: `File too large: ${contentLength} bytes (max: ${maxSize})`,
-            },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "SIZE_LIMIT",
+            `File too large: ${contentLength} bytes (max: ${maxSize})`,
+            Date.now() - startTime
+          );
         }
 
         // Get buffer
         const buffer = await response.arrayBuffer();
         if (buffer.byteLength > maxSize) {
-          return {
-            ok: false,
-            error: {
-              code: "SIZE_LIMIT",
-              message: `Downloaded file exceeds size limit`,
-            },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "SIZE_LIMIT",
+            "Downloaded file exceeds size limit",
+            Date.now() - startTime
+          );
         }
 
         // Write to file
         const { promises: fs } = await import("fs");
         await fs.writeFile(pathValidation.resolvedPath!, Buffer.from(buffer));
 
-        return {
-          ok: true,
-          data: {
-            success: true,
-            path: input.destPath,
-            size: buffer.byteLength,
-          },
-          meta: { durationMs: Date.now() - startTime },
-        };
+        return ToolResultBuilder.success(
+          { success: true, path: input.destPath, size: buffer.byteLength },
+          { durationMs: Date.now() - startTime }
+        );
       } catch (error) {
-        return {
-          ok: false,
-          error: {
-            code: "DOWNLOAD_ERROR",
-            message: error instanceof Error ? error.message : "Download failed",
-          },
-          meta: { durationMs: Date.now() - startTime },
-        };
+        return ToolResultBuilder.failureWithDuration(
+          "DOWNLOAD_ERROR",
+          error instanceof Error ? error.message : "Download failed",
+          Date.now() - startTime
+        );
       }
     },
   };

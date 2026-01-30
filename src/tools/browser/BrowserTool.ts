@@ -3,6 +3,7 @@
 import type { ToolSpec } from "../../types/index.js";
 import { SessionManager } from "./SessionManager.js";
 import type { Browser, Page } from "playwright";
+import { ToolResultBuilder } from "../runtime/ToolResultBuilder.js";
 
 // Lazy import Playwright to avoid issues if not installed
 let playwright: typeof import("playwright") | null = null;
@@ -322,24 +323,17 @@ export function createBrowserTools(browserTool: BrowserTool): ToolSpec[] {
           headless: { type: "boolean" },
         },
       },
-      run: async (input, ctx) => {
+      run: async (input) => {
         const startTime = Date.now();
         try {
           const data = await browserTool.start(input as BrowserStartInput);
-          return {
-            ok: true,
-            data,
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.success(data, { durationMs: Date.now() - startTime });
         } catch (error) {
-          return {
-            ok: false,
-            error: {
-              code: "BROWSER_ERROR",
-              message: error instanceof Error ? error.message : "Failed to start browser",
-            },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "BROWSER_ERROR",
+            error instanceof Error ? error.message : "Failed to start browser",
+            Date.now() - startTime
+          );
         }
       },
     },
@@ -354,24 +348,17 @@ export function createBrowserTools(browserTool: BrowserTool): ToolSpec[] {
         },
         required: ["url"],
       },
-      run: async (input, ctx) => {
+      run: async (input) => {
         const startTime = Date.now();
         try {
           const data = await browserTool.goto(input as BrowserGotoInput);
-          return {
-            ok: true,
-            data,
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.success(data, { durationMs: Date.now() - startTime });
         } catch (error) {
-          return {
-            ok: false,
-            error: {
-              code: "BROWSER_ERROR",
-              message: error instanceof Error ? error.message : "Failed to navigate",
-            },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "BROWSER_ERROR",
+            error instanceof Error ? error.message : "Failed to navigate",
+            Date.now() - startTime
+          );
         }
       },
     },
@@ -386,24 +373,17 @@ export function createBrowserTools(browserTool: BrowserTool): ToolSpec[] {
         },
         required: ["mode"],
       },
-      run: async (input, ctx) => {
+      run: async (input) => {
         const startTime = Date.now();
         try {
           const data = await browserTool.snapshot(input as BrowserSnapshotInput);
-          return {
-            ok: true,
-            data,
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.success(data, { durationMs: Date.now() - startTime });
         } catch (error) {
-          return {
-            ok: false,
-            error: {
-              code: "BROWSER_ERROR",
-              message: error instanceof Error ? error.message : "Failed to get snapshot",
-            },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "BROWSER_ERROR",
+            error instanceof Error ? error.message : "Failed to get snapshot",
+            Date.now() - startTime
+          );
         }
       },
     },
@@ -421,24 +401,17 @@ export function createBrowserTools(browserTool: BrowserTool): ToolSpec[] {
         },
         required: ["type", "selector"],
       },
-      run: async (input, ctx) => {
+      run: async (input) => {
         const startTime = Date.now();
         try {
           const data = await browserTool.act(input as BrowserActInput);
-          return {
-            ok: true,
-            data,
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.success(data, { durationMs: Date.now() - startTime });
         } catch (error) {
-          return {
-            ok: false,
-            error: {
-              code: "BROWSER_ERROR",
-              message: error instanceof Error ? error.message : "Failed to perform action",
-            },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "BROWSER_ERROR",
+            error instanceof Error ? error.message : "Failed to perform action",
+            Date.now() - startTime
+          );
         }
       },
     },
@@ -452,24 +425,17 @@ export function createBrowserTools(browserTool: BrowserTool): ToolSpec[] {
           sessionKey: { type: "string" },
         },
       },
-      run: async (input, ctx) => {
+      run: async (input) => {
         const startTime = Date.now();
         try {
           const data = await browserTool.screenshot(input as BrowserScreenshotInput);
-          return {
-            ok: true,
-            data,
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.success(data, { durationMs: Date.now() - startTime });
         } catch (error) {
-          return {
-            ok: false,
-            error: {
-              code: "BROWSER_ERROR",
-              message: error instanceof Error ? error.message : "Failed to take screenshot",
-            },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "BROWSER_ERROR",
+            error instanceof Error ? error.message : "Failed to take screenshot",
+            Date.now() - startTime
+          );
         }
       },
     },
@@ -486,24 +452,17 @@ export function createBrowserTools(browserTool: BrowserTool): ToolSpec[] {
         },
         required: ["selector", "kind"],
       },
-      run: async (input, ctx) => {
+      run: async (input) => {
         const startTime = Date.now();
         try {
           const data = await browserTool.extract(input as BrowserExtractInput);
-          return {
-            ok: true,
-            data,
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.success(data, { durationMs: Date.now() - startTime });
         } catch (error) {
-          return {
-            ok: false,
-            error: {
-              code: "BROWSER_ERROR",
-              message: error instanceof Error ? error.message : "Failed to extract content",
-            },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "BROWSER_ERROR",
+            error instanceof Error ? error.message : "Failed to extract content",
+            Date.now() - startTime
+          );
         }
       },
     },
@@ -516,24 +475,17 @@ export function createBrowserTools(browserTool: BrowserTool): ToolSpec[] {
           sessionKey: { type: "string" },
         },
       },
-      run: async (input, ctx) => {
+      run: async (input) => {
         const startTime = Date.now();
         try {
           const data = await browserTool.closeSession(input as BrowserCloseInput);
-          return {
-            ok: true,
-            data,
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.success(data, { durationMs: Date.now() - startTime });
         } catch (error) {
-          return {
-            ok: false,
-            error: {
-              code: "BROWSER_ERROR",
-              message: error instanceof Error ? error.message : "Failed to close session",
-            },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "BROWSER_ERROR",
+            error instanceof Error ? error.message : "Failed to close session",
+            Date.now() - startTime
+          );
         }
       },
     },

@@ -54,7 +54,8 @@
       "Skill(commit:*)",
       "Bash(pnpm build:*)",
       "Bash(pnpm install:*)",
-      "Bash(pnpm test:run:*)"
+      "Bash(pnpm test:run:*)",
+      "Bash(npm test:*)"
     ],
     "deny": [],
     "ask": []

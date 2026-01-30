@@ -4,6 +4,7 @@ import { spawn } from "child_process";
 import type { ToolSpec } from "../../types/index.js";
 import { ApprovalManager } from "../runtime/ApprovalManager.js";
 import { CommandSanitizer } from "./CommandSanitizer.js";
+import { ToolResultBuilder } from "../runtime/ToolResultBuilder.js";
 
 interface SystemRunInput {
   argv: string | string[];
@@ -59,14 +60,11 @@ export function createSystemRunTool(approvalManager: ApprovalManager): ToolSpec<
         const approval = await approvalManager.checkApproval(argv, cwd, ctx.workspaceRoot);
 
         if (!approval.approved) {
-          return {
-            ok: false,
-            error: {
-              code: "APPROVAL_DENIED",
-              message: approval.reason ?? "Command not approved for execution",
-            },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "APPROVAL_DENIED",
+            approval.reason ?? "Command not approved for execution",
+            Date.now() - startTime
+          );
         }
 
         // Additional sanitization check
@@ -74,34 +72,24 @@ export function createSystemRunTool(approvalManager: ApprovalManager): ToolSpec<
         const sanitization = sanitizer.sanitize(argv, cwd, ctx.workspaceRoot);
 
         if (!sanitization.safe) {
-          return {
-            ok: false,
-            error: {
-              code: "SANITIZATION_FAILED",
-              message: sanitization.reason ?? "Command failed sanitization",
-              details: { matchedPattern: sanitization.matchedPattern },
-            },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "SANITIZATION_FAILED",
+            sanitization.reason ?? "Command failed sanitization",
+            Date.now() - startTime,
+            { matchedPattern: sanitization.matchedPattern }
+          );
         }
 
         // Execute command
         const result = await executeCommand(argv, cwd, input.env, input.timeoutMs ?? ctx.policy.timeoutMs);
 
-        return {
-          ok: true,
-          data: result,
-          meta: { durationMs: Date.now() - startTime },
-        };
+        return ToolResultBuilder.success(result, { durationMs: Date.now() - startTime });
       } catch (error) {
-        return {
-          ok: false,
-          error: {
-            code: "EXECUTION_ERROR",
-            message: error instanceof Error ? error.message : "Command execution failed",
-          },
-          meta: { durationMs: Date.now() - startTime },
-        };
+        return ToolResultBuilder.failureWithDuration(
+          "EXECUTION_ERROR",
+          error instanceof Error ? error.message : "Command execution failed",
+          Date.now() - startTime
+        );
       }
     },
   };
@@ -130,27 +118,19 @@ export function createSystemRunRawTool(approvalManager: ApprovalManager): ToolSp
       const startTime = Date.now();
 
       try {
-        const cwd = input.cwd ?? ctx.workspaceRoot;
-
         // RunRaw is inherently dangerous, always deny unless explicitly allowed
         // This is a safety measure - the tool exists for edge cases but should be rarely used
-        return {
-          ok: false,
-          error: {
-            code: "DEPRECATED_TOOL",
-            message: "system.runRaw is deprecated. Use system.run with argv array instead.",
-          },
-          meta: { durationMs: Date.now() - startTime },
-        };
+        return ToolResultBuilder.failureWithDuration(
+          "DEPRECATED_TOOL",
+          "system.runRaw is deprecated. Use system.run with argv array instead.",
+          Date.now() - startTime
+        );
       } catch (error) {
-        return {
-          ok: false,
-          error: {
-            code: "EXECUTION_ERROR",
-            message: error instanceof Error ? error.message : "Command execution failed",
-          },
-          meta: { durationMs: Date.now() - startTime },
-        };
+        return ToolResultBuilder.failureWithDuration(
+          "EXECUTION_ERROR",
+          error instanceof Error ? error.message : "Command execution failed",
+          Date.now() - startTime
+        );
       }
     },
   };

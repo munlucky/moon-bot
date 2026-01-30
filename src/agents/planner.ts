@@ -1,7 +1,7 @@
 // Planner: Breaks down goals into steps
 
 import { createLogger, type Logger } from "../utils/logger.js";
-import type { SystemConfig, Session, SessionMessage, Step } from "../types/index.js";
+import type { SystemConfig, Session, SessionMessage, Step, ToolDefinition } from "../types/index.js";
 import { LLMClient, type LLMPlanRequest } from "../llm/LLMClient.js";
 
 export { Step } from "../types/index.js";
@@ -15,12 +15,27 @@ export class Planner {
   private config: SystemConfig;
   private logger: Logger;
   private llmClient: LLMClient;
+  private toolDefinitions: ToolDefinition[];
+  /** @deprecated Use toolDefinitions instead */
   private availableTools: string[];
 
-  constructor(config: SystemConfig, availableTools: string[] = []) {
+  constructor(
+    config: SystemConfig,
+    toolDefinitionsOrIds: ToolDefinition[] | string[] = []
+  ) {
     this.config = config;
     this.logger = createLogger(config);
-    this.availableTools = availableTools;
+
+    // Support both ToolDefinition[] and legacy string[]
+    if (toolDefinitionsOrIds.length > 0 && typeof toolDefinitionsOrIds[0] === "string") {
+      // Legacy: string[] (tool IDs only)
+      this.availableTools = toolDefinitionsOrIds as string[];
+      this.toolDefinitions = [];
+    } else {
+      // New: ToolDefinition[]
+      this.toolDefinitions = toolDefinitionsOrIds as ToolDefinition[];
+      this.availableTools = this.toolDefinitions.map((t) => t.name);
+    }
 
     // Initialize LLM client with LLM config
     this.llmClient = new LLMClient(config.llm);
@@ -34,7 +49,10 @@ export class Planner {
       try {
         const request: LLMPlanRequest = {
           message,
-          availableTools: this.availableTools,
+          toolDefinitions:
+            this.toolDefinitions.length > 0 ? this.toolDefinitions : undefined,
+          availableTools:
+            this.toolDefinitions.length === 0 ? this.availableTools : undefined,
           sessionContext: session?.messages
             .filter((m) => m.type === "user" || m.type === "assistant")
             .map((m) => `${m.type}: ${m.content}`)
@@ -134,7 +152,7 @@ export class Planner {
     // Add remaining goals
     for (const goal of remainingGoals) {
       const goalStep: Step = {
-        id: `goal-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: `goal-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
         description: goal,
         dependsOn: newSteps.map((s) => s.id),
       };

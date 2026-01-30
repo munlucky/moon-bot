@@ -129,6 +129,16 @@ export interface ToolSpec<TInput = unknown, TOutput = unknown> {
   run: (input: TInput, ctx: ToolContext) => Promise<ToolResult<TOutput>>;
 }
 
+/**
+ * Tool definition for LLM context.
+ * Contains only the metadata needed for LLM to understand and use the tool.
+ */
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  schema: object;
+}
+
 export interface ApprovalRequest {
   id: string;
   sessionId: string;
@@ -230,6 +240,15 @@ export interface Step {
   dependsOn?: string[];
 }
 
+/**
+ * Tool execution metadata.
+ */
+export interface ToolMeta {
+  durationMs: number;
+  artifacts?: string[];
+  truncated?: boolean;
+}
+
 export interface ToolResult<T = unknown> {
   ok: boolean;
   data?: T;
@@ -238,11 +257,7 @@ export interface ToolResult<T = unknown> {
     message: string;
     details?: unknown;
   };
-  meta: {
-    durationMs: number;
-    artifacts?: string[];
-    truncated?: boolean;
-  };
+  meta: ToolMeta;
 }
 
 export interface ApprovalConfig {

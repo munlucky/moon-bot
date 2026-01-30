@@ -108,3 +108,8 @@
 {"type":"entity","name":"moonbot::Component::LLMClient","entityType":"component","observations":["generateResponse()로 계획 없이 직접 응답 생성 지원","응답 전용 system/user prompt 추가 (toolContext, sessionContext 포함 가능)"]}
 {"type":"entity","name":"moonbot::Component::TaskOrchestrator","entityType":"component","observations":["기본 taskTimeoutMs를 600000ms(10분)로 상향"]}
 {"type":"entity","name":"moonbot::Component::DevScripts","entityType":"component","observations":["개발용 start/stop/restart 스크립트 추가 (scripts/dev.ps1)","PID 파일은 .moonbot-dev/에 저장","stdout/stderr 로그 분리: gateway.log/gateway.error.log, discord-bot.log/discord-bot.error.log","package.json에 dev:start/dev:stop/dev:restart 스크립트 추가"]}
+{"type":"entity","name":"moonbot::Component::ToolResultBuilder","entityType":"component","observations":["ToolResult 생성 헬퍼 (src/tools/runtime/ToolResultBuilder.ts)","success/failure/timeout/cancelled 등 표준 결과 생성 메서드 제공","failure는 ToolResult<never> 반환으로 타입 공변성 문제 해결"]}
+{"type":"entity","name":"moonbot::Component::Tools","entityType":"component","observations":["Toolkit.getDefinitions()로 ToolDefinition 목록 제공 (LLM 프롬프트용)","Browser/HTTP/FileIO/SystemRun 도구가 ToolResultBuilder로 결과 생성하도록 마이그레이션","ToolDefinition/ToolMeta 타입 추가 (src/types/index.ts)"]}
+{"type":"entity","name":"moonbot::Component::LLMClient","entityType":"component","observations":["LLM system prompt에 ToolDefinition 목록 포함 (toolDefinitions 지원)","formatToolDefinition()로 프롬프트용 포맷 변환"]}
+{"type":"entity","name":"moonbot::Component::Planner","entityType":"component","observations":["ToolDefinition[]을 받아 LLMClient에 전달하도록 생성자/plan() 업데이트","parsePlanResponse에서 step.input 파싱 추가"]}
+{"type":"relation","from":"moonbot::Component::Tools","to":"moonbot::Component::ToolResultBuilder","relationType":"uses"}

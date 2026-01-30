@@ -2,8 +2,9 @@
 
 import fs from "fs/promises";
 import path from "path";
-import type { ToolSpec, ToolResult } from "../../types/index.js";
+import type { ToolSpec } from "../../types/index.js";
 import { PathValidator } from "./PathValidator.js";
+import { ToolResultBuilder } from "../runtime/ToolResultBuilder.js";
 
 /**
  * Recursively get all files in a directory.
@@ -81,11 +82,11 @@ export function createFileReadTool(): ToolSpec<FileReadInput, { content: string;
         const validation = PathValidator.validate(input.path, ctx.workspaceRoot);
 
         if (!validation.valid) {
-          return {
-            ok: false,
-            error: { code: "INVALID_PATH", message: validation.error ?? "Invalid path" },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "INVALID_PATH",
+            validation.error ?? "Invalid path",
+            Date.now() - startTime
+          );
         }
 
         const content = await fs.readFile(validation.resolvedPath!, {
@@ -96,30 +97,20 @@ export function createFileReadTool(): ToolSpec<FileReadInput, { content: string;
 
         // Check size limit
         if (size > ctx.policy.maxBytes) {
-          return {
-            ok: false,
-            error: {
-              code: "SIZE_LIMIT",
-              message: `File too large: ${size} bytes (max: ${ctx.policy.maxBytes})`,
-            },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "SIZE_LIMIT",
+            `File too large: ${size} bytes (max: ${ctx.policy.maxBytes})`,
+            Date.now() - startTime
+          );
         }
 
-        return {
-          ok: true,
-          data: { content, size },
-          meta: { durationMs: Date.now() - startTime },
-        };
+        return ToolResultBuilder.success({ content, size }, { durationMs: Date.now() - startTime });
       } catch (error) {
-        return {
-          ok: false,
-          error: {
-            code: "READ_ERROR",
-            message: error instanceof Error ? error.message : "Failed to read file",
-          },
-          meta: { durationMs: Date.now() - startTime },
-        };
+        return ToolResultBuilder.failureWithDuration(
+          "READ_ERROR",
+          error instanceof Error ? error.message : "Failed to read file",
+          Date.now() - startTime
+        );
       }
     },
   };
@@ -146,11 +137,11 @@ export function createFileWriteTool(): ToolSpec<FileWriteInput, { success: boole
         const validation = PathValidator.validate(input.path, ctx.workspaceRoot);
 
         if (!validation.valid) {
-          return {
-            ok: false,
-            error: { code: "INVALID_PATH", message: validation.error ?? "Invalid path" },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "INVALID_PATH",
+            validation.error ?? "Invalid path",
+            Date.now() - startTime
+          );
         }
 
         const targetPath = validation.resolvedPath!;
@@ -158,14 +149,11 @@ export function createFileWriteTool(): ToolSpec<FileWriteInput, { success: boole
         // Check content size
         const size = Buffer.byteLength(input.content, input.encoding ?? "utf8");
         if (size > ctx.policy.maxBytes) {
-          return {
-            ok: false,
-            error: {
-              code: "SIZE_LIMIT",
-              message: `Content too large: ${size} bytes (max: ${ctx.policy.maxBytes})`,
-            },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "SIZE_LIMIT",
+            `Content too large: ${size} bytes (max: ${ctx.policy.maxBytes})`,
+            Date.now() - startTime
+          );
         }
 
         if (input.atomic !== false) {
@@ -177,20 +165,16 @@ export function createFileWriteTool(): ToolSpec<FileWriteInput, { success: boole
           await fs.writeFile(targetPath, input.content, { encoding: input.encoding ?? "utf8" });
         }
 
-        return {
-          ok: true,
-          data: { success: true, path: input.path },
-          meta: { durationMs: Date.now() - startTime },
-        };
+        return ToolResultBuilder.success(
+          { success: true, path: input.path },
+          { durationMs: Date.now() - startTime }
+        );
       } catch (error) {
-        return {
-          ok: false,
-          error: {
-            code: "WRITE_ERROR",
-            message: error instanceof Error ? error.message : "Failed to write file",
-          },
-          meta: { durationMs: Date.now() - startTime },
-        };
+        return ToolResultBuilder.failureWithDuration(
+          "WRITE_ERROR",
+          error instanceof Error ? error.message : "Failed to write file",
+          Date.now() - startTime
+        );
       }
     },
   };
@@ -215,11 +199,11 @@ export function createFileListTool(): ToolSpec<FileListInput, { entries: FileEnt
         const validation = PathValidator.validate(input.path, ctx.workspaceRoot);
 
         if (!validation.valid) {
-          return {
-            ok: false,
-            error: { code: "INVALID_PATH", message: validation.error ?? "Invalid path" },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.failureWithDuration(
+            "INVALID_PATH",
+            validation.error ?? "Invalid path",
+            Date.now() - startTime
+          );
         }
 
         const targetPath = validation.resolvedPath!;
@@ -244,11 +228,7 @@ export function createFileListTool(): ToolSpec<FileListInput, { entries: FileEnt
             }
           }
 
-          return {
-            ok: true,
-            data: { entries },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.success({ entries }, { durationMs: Date.now() - startTime });
         } else {
           const dirents = await fs.readdir(targetPath, { withFileTypes: true });
           const entries: FileEntry[] = [];
@@ -274,21 +254,14 @@ export function createFileListTool(): ToolSpec<FileListInput, { entries: FileEnt
             }
           }
 
-          return {
-            ok: true,
-            data: { entries },
-            meta: { durationMs: Date.now() - startTime },
-          };
+          return ToolResultBuilder.success({ entries }, { durationMs: Date.now() - startTime });
         }
       } catch (error) {
-        return {
-          ok: false,
-          error: {
-            code: "LIST_ERROR",
-            message: error instanceof Error ? error.message : "Failed to list directory",
-          },
-          meta: { durationMs: Date.now() - startTime },
-        };
+        return ToolResultBuilder.failureWithDuration(
+          "LIST_ERROR",
+          error instanceof Error ? error.message : "Failed to list directory",
+          Date.now() - startTime
+        );
       }
     },
   };
@@ -338,20 +311,13 @@ export function createFileGlobTool(): ToolSpec<FileGlobInput, { paths: string[] 
 
         const relativePaths = matched.map((p) => path.relative(ctx.workspaceRoot, p));
 
-        return {
-          ok: true,
-          data: { paths: relativePaths },
-          meta: { durationMs: Date.now() - startTime },
-        };
+        return ToolResultBuilder.success({ paths: relativePaths }, { durationMs: Date.now() - startTime });
       } catch (error) {
-        return {
-          ok: false,
-          error: {
-            code: "GLOB_ERROR",
-            message: error instanceof Error ? error.message : "Failed to execute glob",
-          },
-          meta: { durationMs: Date.now() - startTime },
-        };
+        return ToolResultBuilder.failureWithDuration(
+          "GLOB_ERROR",
+          error instanceof Error ? error.message : "Failed to execute glob",
+          Date.now() - startTime
+        );
       }
     },
   };

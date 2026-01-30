@@ -4,7 +4,7 @@ import path from "path";
 import os from "os";
 import { randomUUID } from "crypto";
 import { createLogger, type Logger } from "../utils/logger.js";
-import type { SystemConfig, ToolSpec, ToolContext, ToolResult } from "../types/index.js";
+import type { SystemConfig, ToolSpec, ToolContext, ToolResult, ToolDefinition, ToolMeta } from "../types/index.js";
 import { ToolRuntime } from "./runtime/ToolRuntime.js";
 import { ApprovalManager } from "./runtime/ApprovalManager.js";
 
@@ -110,6 +110,18 @@ export class Toolkit {
   }
 
   /**
+   * Get tool definitions for LLM context.
+   * Returns an array of ToolDefinition containing name, description, and schema.
+   */
+  getDefinitions(): ToolDefinition[] {
+    return Array.from(this.tools.values()).map((tool) => ({
+      name: tool.id,
+      description: tool.description,
+      schema: tool.schema,
+    }));
+  }
+
+  /**
    * Get the tool runtime instance.
    */
   getRuntime(): ToolRuntime | null {
@@ -211,4 +223,5 @@ export function validateFilePath(inputPath: string, allowedDir: string): string 
 
 // Re-export for convenience
 export { ToolRuntime, ApprovalManager };
-export type { ToolContext, ToolResult };
+export { ToolResultBuilder } from "./runtime/ToolResultBuilder.js";
+export type { ToolContext, ToolResult, ToolDefinition, ToolMeta };
