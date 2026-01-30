@@ -628,6 +628,15 @@ export const ClaudeCodeStartResultSchema = Type.Object({
   status: ProcessStatusSchema,
   useScreenCapture: Type.Boolean(),
   workingDirectory: Type.String(),
+  nodeId: Type.Optional(
+    Type.String({ description: "Remote node ID when useScreenCapture is true" })
+  ),
+  nodeName: Type.Optional(
+    Type.String({ description: "Remote node name when useScreenCapture is true" })
+  ),
+  isNodeSession: Type.Optional(
+    Type.Boolean({ description: "Whether this session runs on a remote node" })
+  ),
 });
 
 export type ClaudeCodeStartResult = Static<typeof ClaudeCodeStartResultSchema>;
@@ -651,8 +660,17 @@ export const ClaudeCodeWriteResultSchema = Type.Object({
   success: Type.Boolean(),
   bytesWritten: Type.Integer({ minimum: 0 }),
   useScreenCapture: Type.Boolean({
-    description: "If true, caller should capture screen via nodes.screen_snap",
+    description: "If true, indicates screen capture mode is active",
   }),
+  screenCaptureData: Type.Optional(
+    Type.String({ description: "Base64-encoded PNG image data from screen capture" })
+  ),
+  nodeId: Type.Optional(
+    Type.String({ description: "Remote node ID when useScreenCapture is true" })
+  ),
+  nodeName: Type.Optional(
+    Type.String({ description: "Remote node name when useScreenCapture is true" })
+  ),
 });
 
 export type ClaudeCodeWriteResult = Static<typeof ClaudeCodeWriteResultSchema>;
@@ -681,6 +699,18 @@ export const ClaudeCodeStopResultSchema = Type.Object({
   exitCode: Type.Union([Type.Integer(), Type.Null()]),
   message: Type.String(),
   lastOutput: Type.Optional(Type.String({ description: "Last output before termination" })),
+  useScreenCapture: Type.Boolean({
+    description: "Whether screen capture mode was active",
+  }),
+  screenCaptureData: Type.Optional(
+    Type.String({ description: "Final screen capture before termination (Base64-encoded PNG)" })
+  ),
+  nodeId: Type.Optional(
+    Type.String({ description: "Remote node ID when useScreenCapture was true" })
+  ),
+  nodeName: Type.Optional(
+    Type.String({ description: "Remote node name when useScreenCapture was true" })
+  ),
 });
 
 export type ClaudeCodeStopResult = Static<typeof ClaudeCodeStopResultSchema>;

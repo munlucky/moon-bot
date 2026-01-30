@@ -5,6 +5,7 @@ import type { ToolSpec, ToolContext, ToolResult } from "../../types/index.js";
 import { ToolResultBuilder } from "../runtime/ToolResultBuilder.js";
 import { NodeSessionManager } from "./NodeSessionManager.js";
 import { NodeCommandValidator } from "./NodeCommandValidator.js";
+import { NodeExecutor } from "./NodeExecutor.js";
 
 /**
  * Create nodes.status tool
@@ -79,7 +80,8 @@ export function createNodesStatusTool(
  */
 export function createNodesRunTool(
   sessionManager: NodeSessionManager,
-  commandValidator: NodeCommandValidator
+  commandValidator: NodeCommandValidator,
+  nodeExecutor?: NodeExecutor
 ): ToolSpec<unknown, unknown> {
   return {
     id: "nodes.run",
@@ -168,14 +170,33 @@ export function createNodesRunTool(
           return ToolResultBuilder.failure("NODE_NOT_AVAILABLE", `Node is ${node.status}`);
         }
 
-        // This would normally call via gateway - for now return queued status
-        // Actual execution happens via Gateway RPC handlers
+        // Execute via NodeExecutor if available
+        if (nodeExecutor) {
+          const result = await nodeExecutor.executeCommand(userId, params.argv, {
+            nodeId: params.nodeId,
+            cwd: params.cwd,
+            env: params.env,
+            timeoutMs: params.timeoutMs,
+          });
+
+          return ToolResultBuilder.success({
+            success: result.success,
+            nodeId: result.nodeId,
+            nodeName: result.nodeName,
+            exitCode: result.exitCode ?? null,
+            stdout: result.stdout ?? "",
+            stderr: result.stderr ?? "",
+            status: result.status,
+          });
+        }
+
+        // Fallback: return queued status if NodeExecutor not configured
         return ToolResultBuilder.success({
           success: true,
           nodeId: node.nodeId,
           nodeName: node.nodeName,
           status: "queued",
-          message: "Command queued for execution on remote node",
+          message: "Command queued for execution on remote node (NodeExecutor not configured)",
         });
       } catch (error) {
         return ToolResultBuilder.failure(
@@ -191,7 +212,8 @@ export function createNodesRunTool(
  * Create nodes.screen_snap tool
  */
 export function createNodesScreenSnapTool(
-  sessionManager: NodeSessionManager
+  sessionManager: NodeSessionManager,
+  nodeExecutor?: NodeExecutor
 ): ToolSpec<unknown, unknown> {
   return {
     id: "nodes.screen_snap",
@@ -211,6 +233,8 @@ export function createNodesScreenSnapTool(
         type: "object",
         properties: {
           success: { type: "boolean" },
+          nodeId: { type: "string" },
+          nodeName: { type: "string" },
           imageData: { type: "string", description: "Base64-encoded PNG image" },
           format: { type: "string", enum: ["png"] },
         },
@@ -255,14 +279,27 @@ export function createNodesScreenSnapTool(
           );
         }
 
-        // This would normally call via gateway - for now return queued status
-        // Actual execution happens via Gateway RPC handlers
+        // Execute via NodeExecutor if available
+        if (nodeExecutor) {
+          const result = await nodeExecutor.requestScreenCapture(userId, params.nodeId);
+
+          return ToolResultBuilder.success({
+            success: result.success,
+            nodeId: result.nodeId,
+            nodeName: result.nodeName,
+            imageData: result.imageData,
+            format: result.format,
+            status: result.status,
+          });
+        }
+
+        // Fallback: return queued status if NodeExecutor not configured
         return ToolResultBuilder.success({
           success: true,
           nodeId: node.nodeId,
           nodeName: node.nodeName,
           status: "queued",
-          message: "Screen capture requested from remote node",
+          message: "Screen capture requested from remote node (NodeExecutor not configured)",
         });
       } catch (error) {
         return ToolResultBuilder.failure(
@@ -456,12 +493,13 @@ export function createNodesConsentCheckTool(
  */
 export function createNodesTools(
   sessionManager: NodeSessionManager,
-  commandValidator: NodeCommandValidator
+  commandValidator: NodeCommandValidator,
+  nodeExecutor?: NodeExecutor
 ): ToolSpec<unknown, unknown>[] {
   return [
     createNodesStatusTool(sessionManager),
-    createNodesRunTool(sessionManager, commandValidator),
-    createNodesScreenSnapTool(sessionManager),
+    createNodesRunTool(sessionManager, commandValidator, nodeExecutor),
+    createNodesScreenSnapTool(sessionManager, nodeExecutor),
     createNodesConsentGrantTool(sessionManager),
     createNodesConsentRevokeTool(sessionManager),
     createNodesConsentCheckTool(sessionManager),
