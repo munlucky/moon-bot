@@ -27,6 +27,23 @@ export function createToolHandlers(
     };
   });
 
+  // tools.listDefinitions: Return tool definitions for LLM context
+  // Returns human-readable tool descriptions that can be shown to users
+  handlers.set("tools.listDefinitions", async (params) => {
+    const tools = runtime.listTools();
+
+    const definitions = tools.map((tool) => ({
+      id: tool.id,
+      name: tool.id,
+      description: tool.description,
+    }));
+
+    return {
+      tools: definitions,
+      count: definitions.length,
+    };
+  });
+
   // tools.invoke: Execute a tool
   handlers.set("tools.invoke", async (params) => {
     const { toolId, sessionId, args, agentId, userId } = params as {

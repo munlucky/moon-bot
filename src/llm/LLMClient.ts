@@ -19,6 +19,8 @@ export interface LLMResponseRequest {
   message: string;
   sessionContext?: string;
   toolContext?: string;
+  /** Tool definitions for response generation */
+  toolDefinitions?: ToolDefinition[];
 }
 
 export interface LLMPlanResponse {
@@ -99,7 +101,7 @@ export class LLMClient {
       throw new Error("LLM client not available (API key not configured)");
     }
 
-    const systemPrompt = this.buildResponseSystemPrompt();
+    const systemPrompt = this.buildResponseSystemPrompt(request.toolDefinitions);
     const userPrompt = this.buildResponseUserPrompt(request);
 
     try {
@@ -234,9 +236,33 @@ Respond ONLY with valid JSON in this format:
 
   /**
    * Build system prompt for direct response
+   * @param toolDefinitions Optional tool definitions to include in the prompt
    */
-  private buildResponseSystemPrompt(): string {
-    return "You are Moon-Bot, a helpful assistant. Respond to the user's request clearly and concisely. Use any tool context if provided. If you are unsure, say so. Respond in the same language as the user.";
+  private buildResponseSystemPrompt(toolDefinitions?: ToolDefinition[]): string {
+    let prompt = "You are Moon-Bot, a helpful assistant. Respond to the user's request clearly and concisely.";
+
+    // Add available tools section if tool definitions are provided
+    if (toolDefinitions && toolDefinitions.length > 0) {
+      const toolSection = toolDefinitions
+        .map((tool) => this.formatToolDefinition(tool))
+        .join("\n\n");
+
+      prompt += `
+
+## Available Tools
+You have access to the following tools that can help accomplish tasks:
+
+${toolSection}
+
+When users ask about available tools or what you can do, reference this list. If they ask to perform a task that requires a tool, explain which tool would be used and why.
+`;
+    }
+
+    prompt += `
+
+Use any tool context if provided. If you are unsure, say so. Respond in the same language as the user.`;
+
+    return prompt;
   }
 
   /**

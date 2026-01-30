@@ -143,13 +143,9 @@ export class GatewayServer {
       10     // max 10 connections per minute per IP
     );
 
-    // Initialize tool runtime
-    this.toolRuntime = new ToolRuntime(config, {
-      workspaceRoot: workspaceRoot ?? process.cwd(),
-      defaultTimeoutMs: 30000,
-      maxConcurrent: 10,
-      enableApprovals: true,
-    });
+    // Note: toolRuntime will be initialized from Toolkit in initializeDependencies()
+    // This ensures all tools are registered and available
+    this.toolRuntime = null;
 
     this.initializeDependencies(workspaceRoot).then(() => {
       // Initialize TaskOrchestrator with dependencies
@@ -204,6 +200,9 @@ export class GatewayServer {
       enableBrowser: false,
     });
 
+    // Sync toolRuntime from Toolkit
+    this.toolRuntime = this.toolkit.getRuntime() ?? null;
+
     // Initialize SessionManager
     this.sessionManager = new SessionManager(this.config);
 
@@ -214,6 +213,7 @@ export class GatewayServer {
 
     this.logger.info("Dependencies initialized", {
       hasToolkit: !!this.toolkit,
+      hasToolRuntime: !!this.toolRuntime,
       hasSessionManager: !!this.sessionManager,
       hasExecutor: !!this.executor,
     });

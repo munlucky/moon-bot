@@ -1,7 +1,7 @@
 // Executor: Executes steps using tools with Replanner integration
 
 import { createLogger, type Logger, type LayerLogger, runWithTraceAsync, getTraceContext } from "../utils/logger.js";
-import type { SystemConfig, ToolContext, SessionMessage, ToolResult, ToolSpec } from "../types/index.js";
+import type { SystemConfig, ToolContext, SessionMessage, ToolResult, ToolSpec, ToolDefinition } from "../types/index.js";
 import { Planner, type Step } from "./planner.js";
 import { Replanner, type ToolFailure, type ExecutionContext } from "./replanner.js";
 import type { Toolkit } from "../tools/index.js";
@@ -44,10 +44,10 @@ export class Executor {
 
     // Get available tools
     const toolSpecs = toolkit.list();
-    const toolIds = toolSpecs.map((t) => t.id);
+    const toolDefinitions = toolkit.getDefinitions();
 
-    // Initialize Planner with available tool IDs
-    this.planner = new Planner(config, toolIds);
+    // Initialize Planner with tool definitions
+    this.planner = new Planner(config, toolDefinitions);
 
     // Initialize Replanner with available tool specs
     this.replanner = new Replanner(this.logger, toolSpecs);
@@ -401,6 +401,7 @@ export class Executor {
     messages: SessionMessage[]
   ): Promise<SessionMessage> {
     const toolContext = this.buildToolContext(messages);
+    const toolDefinitions = this.toolkit.getDefinitions();
 
     if (!this.llmClient.isAvailable()) {
       return {
@@ -415,6 +416,7 @@ export class Executor {
       const content = await this.llmClient.generateResponse({
         message,
         toolContext,
+        toolDefinitions,
       });
 
       return {
