@@ -117,9 +117,9 @@ export function createClaudeCodeWriteTool(
           );
         }
 
-        // Verify user ownership
+        // Verify user ownership (strict check - no anonymous bypass)
         const userId = ctx.userId ?? "anonymous";
-        if (session.userId !== userId && session.userId !== "anonymous") {
+        if (session.userId !== userId) {
           return ToolResultBuilder.failureWithDuration(
             "ACCESS_DENIED",
             "You do not own this session",
@@ -181,9 +181,9 @@ export function createClaudeCodePollTool(
           );
         }
 
-        // Verify user ownership
+        // Verify user ownership (strict check - no anonymous bypass)
         const userId = ctx.userId ?? "anonymous";
-        if (session.userId !== userId && session.userId !== "anonymous") {
+        if (session.userId !== userId) {
           return ToolResultBuilder.failureWithDuration(
             "ACCESS_DENIED",
             "You do not own this session",
@@ -250,9 +250,9 @@ export function createClaudeCodeStopTool(
           );
         }
 
-        // Verify user ownership
+        // Verify user ownership (strict check - no anonymous bypass)
         const userId = ctx.userId ?? "anonymous";
-        if (session.userId !== userId && session.userId !== "anonymous") {
+        if (session.userId !== userId) {
           return ToolResultBuilder.failureWithDuration(
             "ACCESS_DENIED",
             "You do not own this session",
