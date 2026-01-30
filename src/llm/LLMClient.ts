@@ -5,6 +5,7 @@ import type { LLMConfig } from "../types/index.js";
 import { createLogger, type Logger } from "../utils/logger.js";
 import { LLMProviderFactory } from "./LLMProviderFactory.js";
 import type { ILLMProvider } from "./types.js";
+import { ToolCallParser, TOOL_ALIASES } from "./ToolCallParser.js";
 
 export interface LLMPlanRequest {
   message: string;
@@ -284,53 +285,86 @@ Use any tool context if provided. If you are unsure, say so. Respond in the same
 
   /**
    * Parse LLM response into LLMPlanResponse
+   * Tries multiple parsing strategies in order:
+   * 1. JSON format (preferred)
+   * 2. Tool call markup (>>tool.name ...)
+   * 3. Throws error if both fail
    */
   private parsePlanResponse(content: string): LLMPlanResponse {
+    // Strategy 1: Try JSON parsing
+    try {
+      return this.parseJsonResponse(content);
+    } catch (jsonError) {
+      this.logger.debug("JSON parsing failed, trying ToolCallParser", { error: jsonError });
+    }
+
+    // Strategy 2: Try ToolCallParser
+    try {
+      const parser = new ToolCallParser();
+      if (parser.hasToolCallMarkup(content)) {
+        const steps = parser.parse(content);
+        return { steps, reasoning: undefined };
+      }
+    } catch (markupError) {
+      this.logger.debug("ToolCallParser failed", { error: markupError });
+    }
+
+    // Strategy 3: Both failed, throw error
+    this.logger.error("Failed to parse LLM response with all strategies", { content });
+    throw new Error("Failed to parse LLM response: not valid JSON or tool call markup");
+  }
+
+  /**
+   * Parse JSON format response
+   */
+  private parseJsonResponse(content: string): LLMPlanResponse {
     // Extract JSON from markdown code blocks if present
     const jsonMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
     const jsonContent = jsonMatch ? jsonMatch[1] : content;
 
-    try {
-      const parsed = JSON.parse(jsonContent);
+    const parsed = JSON.parse(jsonContent);
 
-      // Validate response structure
-      if (!parsed.steps || !Array.isArray(parsed.steps)) {
-        throw new Error("Invalid response: missing or invalid 'steps' array");
+    // Validate response structure
+    if (!parsed.steps || !Array.isArray(parsed.steps)) {
+      throw new Error("Invalid response: missing or invalid 'steps' array");
+    }
+
+    // Validate each step and apply tool aliases
+    const steps: Step[] = parsed.steps.map((step: unknown, index: number) => {
+      if (!step || typeof step !== "object") {
+        throw new Error(`Invalid step at index ${index}`);
       }
 
-      // Validate each step
-      const steps: Step[] = parsed.steps.map((step: unknown, index: number) => {
-        if (!step || typeof step !== "object") {
-          throw new Error(`Invalid step at index ${index}`);
-        }
+      const s = step as Record<string, unknown>;
 
-        const s = step as Record<string, unknown>;
+      if (!s.id || typeof s.id !== "string") {
+        throw new Error(`Step at index ${index} missing valid 'id'`);
+      }
 
-        if (!s.id || typeof s.id !== "string") {
-          throw new Error(`Step at index ${index} missing valid 'id'`);
-        }
+      if (!s.description || typeof s.description !== "string") {
+        throw new Error(`Step at index ${index} missing valid 'description'`);
+      }
 
-        if (!s.description || typeof s.description !== "string") {
-          throw new Error(`Step at index ${index} missing valid 'description'`);
-        }
-
-        return {
-          id: s.id,
-          description: s.description,
-          toolId: s.toolId as string | undefined,
-          input: s.input as unknown,
-          dependsOn: s.dependsOn as string[] | undefined,
-        };
-      });
+      // Apply tool alias if toolId is present
+      let toolId = s.toolId as string | undefined;
+      if (toolId && TOOL_ALIASES[toolId]) {
+        this.logger.debug(`Applying tool alias: ${toolId} -> ${TOOL_ALIASES[toolId]}`);
+        toolId = TOOL_ALIASES[toolId];
+      }
 
       return {
-        steps,
-        reasoning: parsed.reasoning as string | undefined,
+        id: s.id,
+        description: s.description,
+        toolId,
+        input: s.input as unknown,
+        dependsOn: s.dependsOn as string[] | undefined,
       };
-    } catch (error) {
-      this.logger.error("Failed to parse LLM response", { content, error });
-      throw new Error(`Failed to parse LLM response: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    });
+
+    return {
+      steps,
+      reasoning: parsed.reasoning as string | undefined,
+    };
   }
 
   /**
@@ -342,7 +376,7 @@ Use any tool context if provided. If you are unsure, say so. Respond in the same
     const lowerMessage = message.toLowerCase();
     const steps: Step[] = [];
 
-    // Simple keyword-based fallback
+    // Simple keyword-based fallback (use canonical tool IDs)
     if (lowerMessage.includes("search") || lowerMessage.includes("find")) {
       steps.push({
         id: "search",
@@ -355,7 +389,7 @@ Use any tool context if provided. If you are unsure, say so. Respond in the same
       steps.push({
         id: "browse",
         description: "Open browser",
-        toolId: "browser.open",
+        toolId: "browser.goto",  // Updated: browser.open -> browser.goto
       });
     }
 
@@ -363,7 +397,7 @@ Use any tool context if provided. If you are unsure, say so. Respond in the same
       steps.push({
         id: "file",
         description: "File operation",
-        toolId: "filesystem.write",
+        toolId: "fs.write",  // Updated: filesystem.write -> fs.write
       });
     }
 

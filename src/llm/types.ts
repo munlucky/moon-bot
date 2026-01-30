@@ -34,3 +34,7 @@ export interface ChatCompletionResponse {
   content: string;
   model?: string;
 }
+
+// Re-export ToolCallParser types for convenience
+export { ToolCallParser, TOOL_ALIASES } from "./ToolCallParser.js";
+export type { ToolCallParser as ToolCallParserClass } from "./ToolCallParser.js";

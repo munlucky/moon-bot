@@ -1,7 +1,7 @@
 // Enhanced logger utility with service layer tracking and trace context
 
-import fs from "fs";
-import path from "path";
+import * as fs from "fs";
+import * as path from "path";
 import { AsyncLocalStorage } from "async_hooks";
 import type { LogEntry, ServiceLayer, TraceContext, SystemConfig } from "../types/index.js";
 
