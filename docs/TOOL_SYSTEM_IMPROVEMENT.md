@@ -1,10 +1,10 @@
 # Tool System Improvement Guide
 
-> Moltbot TOOL 패턴 분석 및 moon-bot 적용 계획
+> Analysis of Moltbot's TOOL Pattern and Application Plan for moon-bot
 
 ## Overview
 
-Moltbot의 TOOL 시스템을 분석하여 moon-bot에 적용할 개선사항을 정리합니다.
+This document analyzes Moltbot's TOOL system and outlines improvements to be applied to moon-bot.
 
 ## Current State Comparison
 
@@ -203,7 +203,7 @@ import { Type, Static } from "@sinclair/typebox";
 
 const FileReadSchema = Type.Object({
   path: Type.String({ description: "File path to read" }),
-  encoding: Type.Optional(Type.Enum({ utf8: "utf8", ascii: "ascii" }))
+  encoding: Type.Optional(Type.Enum({ utf8: "utf8", ascii: "ascii", base64: "base64" }))
 });
 
 type FileReadInput = Static<typeof FileReadSchema>;
