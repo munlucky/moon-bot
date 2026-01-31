@@ -30,6 +30,36 @@ export interface NodeExecutionResult {
 }
 
 /**
+ * Result of starting a remote interactive session
+ */
+export interface RemoteSessionResult {
+  success: boolean;
+  nodeId: string;
+  nodeName: string;
+  remoteSessionId: string;
+  status: "started" | "failed";
+  error?: string;
+}
+
+/**
+ * Result of writing to a remote session
+ */
+export interface RemoteWriteResult {
+  success: boolean;
+  bytesWritten: number;
+}
+
+/**
+ * Result of polling a remote session
+ */
+export interface RemotePollResult {
+  lines: string[];
+  hasMore: boolean;
+  status: "running" | "exited" | "killed";
+  exitCode: number | null;
+}
+
+/**
  * Result of a screen capture request
  */
 export interface ScreenCaptureResult {
@@ -506,5 +536,211 @@ export class NodeExecutor {
       pending.reject(new Error("EXECUTOR_SHUTDOWN"));
     }
     this.pendingCaptures.clear();
+  }
+
+  // ============================================
+  // Remote Interactive Session Management
+  // ============================================
+
+  /**
+   * Start an interactive PTY session on a remote node
+   * This creates a persistent session that can receive input and produce output
+   *
+   * @param userId - User ID
+   * @param argv - Command and arguments to execute
+   * @param options - Session options
+   * @returns Promise that resolves with remote session info
+   */
+  async startRemoteSession(
+    userId: string,
+    argv: string | string[],
+    options: {
+      nodeId?: string;
+      cwd?: string;
+      env?: Record<string, string>;
+      timeoutMs?: number;
+    } = {}
+  ): Promise<RemoteSessionResult> {
+    // Select node
+    const node = this.sessionManager.selectNodeForCommand(
+      userId,
+      options.nodeId
+    );
+
+    if (!node.capabilities.commandExec) {
+      throw new Error("NODE_CAPABILITY_REQUIRED: This node does not support command execution");
+    }
+
+    if (node.status !== "paired") {
+      throw new Error(`NODE_NOT_AVAILABLE: Node is ${node.status}`);
+    }
+
+    // Check RPC sender is available
+    if (!this.isRpcReady()) {
+      throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
+    }
+
+    const timeout = options.timeoutMs ?? this.config.defaultTimeoutMs;
+
+    // Execute with retry logic - start interactive session on node
+    return executeWithRetry(async () => {
+      const result = await this.rpcSender!(node.nodeId, "nodes.session.start", {
+        argv,
+        cwd: options.cwd,
+        env: options.env,
+        pty: true,
+      }, { timeoutMs: timeout }) as {
+        sessionId?: string;
+        error?: string;
+      };
+
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
+      if (!result.sessionId) {
+        throw new Error("NODE_SESSION_ERROR: Remote session did not return sessionId");
+      }
+
+      return {
+        success: true,
+        nodeId: node.nodeId,
+        nodeName: node.nodeName,
+        remoteSessionId: result.sessionId,
+        status: "started",
+      };
+    }, this.config.retry, "Start remote session");
+  }
+
+  /**
+   * Write input to a remote interactive session
+   *
+   * @param nodeId - Node ID
+   * @param remoteSessionId - Remote session ID returned from startRemoteSession
+   * @param input - Input to write
+   * @returns Promise that resolves with write result
+   */
+  async writeToRemoteSession(
+    nodeId: string,
+    remoteSessionId: string,
+    input: string
+  ): Promise<RemoteWriteResult> {
+    const node = this.sessionManager.getNode(nodeId);
+    if (!node) {
+      throw new Error("NODE_NOT_FOUND: Node not found");
+    }
+
+    if (!this.isRpcReady()) {
+      throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
+    }
+
+    return executeWithRetry(async () => {
+      const result = await this.rpcSender!(nodeId, "nodes.session.write", {
+        sessionId: remoteSessionId,
+        input,
+      }, { timeoutMs: this.config.defaultTimeoutMs }) as {
+        bytesWritten?: number;
+        error?: string;
+      };
+
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
+      return {
+        success: true,
+        bytesWritten: result.bytesWritten ?? input.length,
+      };
+    }, this.config.retry, "Write to remote session");
+  }
+
+  /**
+   * Poll output from a remote interactive session
+   *
+   * @param nodeId - Node ID
+   * @param remoteSessionId - Remote session ID
+   * @param maxLines - Maximum lines to return
+   * @returns Promise that resolves with poll result
+   */
+  async pollRemoteSession(
+    nodeId: string,
+    remoteSessionId: string,
+    maxLines: number = 100
+  ): Promise<RemotePollResult> {
+    const node = this.sessionManager.getNode(nodeId);
+    if (!node) {
+      throw new Error("NODE_NOT_FOUND: Node not found");
+    }
+
+    if (!this.isRpcReady()) {
+      throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
+    }
+
+    return executeWithRetry(async () => {
+      const result = await this.rpcSender!(nodeId, "nodes.session.poll", {
+        sessionId: remoteSessionId,
+        maxLines,
+      }, { timeoutMs: this.config.defaultTimeoutMs }) as {
+        lines?: string[];
+        hasMore?: boolean;
+        status?: "running" | "exited" | "killed";
+        exitCode?: number | null;
+        error?: string;
+      };
+
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
+      return {
+        lines: result.lines ?? [],
+        hasMore: result.hasMore ?? false,
+        status: result.status ?? "running",
+        exitCode: result.exitCode ?? null,
+      };
+    }, this.config.retry, "Poll remote session");
+  }
+
+  /**
+   * Stop a remote interactive session
+   *
+   * @param nodeId - Node ID
+   * @param remoteSessionId - Remote session ID
+   * @param signal - Signal to send (default: SIGTERM)
+   * @returns Promise that resolves when session is stopped
+   */
+  async stopRemoteSession(
+    nodeId: string,
+    remoteSessionId: string,
+    signal: string = "SIGTERM"
+  ): Promise<{ success: boolean; exitCode: number | null }> {
+    const node = this.sessionManager.getNode(nodeId);
+    if (!node) {
+      throw new Error("NODE_NOT_FOUND: Node not found");
+    }
+
+    if (!this.isRpcReady()) {
+      throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
+    }
+
+    return executeWithRetry(async () => {
+      const result = await this.rpcSender!(nodeId, "nodes.session.stop", {
+        sessionId: remoteSessionId,
+        signal,
+      }, { timeoutMs: this.config.defaultTimeoutMs }) as {
+        success?: boolean;
+        exitCode?: number | null;
+        error?: string;
+      };
+
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
+      return {
+        success: result.success ?? true,
+        exitCode: result.exitCode ?? null,
+      };
+    }, this.config.retry, "Stop remote session");
   }
 }

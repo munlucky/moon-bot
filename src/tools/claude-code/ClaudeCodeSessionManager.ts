@@ -31,6 +31,8 @@ export interface ClaudeCodeSession {
   nodeName?: string;
   /** Whether this session runs on a remote node */
   isNodeSession: boolean;
+  /** Remote session ID on the node (for interactive sessions) */
+  remoteSessionId?: string;
 }
 
 /**
@@ -41,6 +43,8 @@ export interface ClaudeCodeSessionManagerConfig {
   defaultTimeout?: number;
   maxSessionsPerUser?: number;
   nodeExecutor?: NodeExecutor;
+  /** Delay before capturing screen after write (ms) - default 300 */
+  screenCaptureDelayMs?: number;
 }
 
 type ClaudeCodeSessionManagerConfigInternal = Omit<ClaudeCodeSessionManagerConfig, 'nodeExecutor'> & {
@@ -51,6 +55,7 @@ const DEFAULT_CONFIG: Required<Omit<ClaudeCodeSessionManagerConfigInternal, 'nod
   claudeCliPath: "claude",
   defaultTimeout: 1800,
   maxSessionsPerUser: 2,
+  screenCaptureDelayMs: 300,
 };
 
 /**
@@ -210,6 +215,7 @@ export class ClaudeCodeSessionManager {
 
   /**
    * Create a session that runs on a remote node with screen capture
+   * Uses startRemoteSession to create a persistent interactive session on the node
    */
   private async createNodeSession(
     sessionId: string,
@@ -249,31 +255,28 @@ export class ClaudeCodeSessionManager {
       );
     }
 
-    // Execute Claude CLI on the remote node
-    // The node will run the command and display it on the local terminal
-    const execResult = await this.nodeExecutor.executeCommand(userId, command, {
+    // Start interactive PTY session on the remote node
+    // This creates a persistent session that can receive input and produce output
+    const remoteResult = await this.nodeExecutor.startRemoteSession(userId, command, {
       nodeId: nodeInfo.nodeId,
       cwd: workingDirectory,
       env,
       timeoutMs: timeout * 1000,
     });
 
-    if (!execResult.success && execResult.status === "failed") {
+    if (!remoteResult.success || remoteResult.status === "failed") {
       throw new Error(
-        `NODE_EXEC_FAILED: Failed to start Claude CLI on node: ${execResult.stderr || "Unknown error"}`
+        `NODE_SESSION_FAILED: Failed to start interactive session on node: ${remoteResult.error || "Unknown error"}`
       );
     }
 
-    // Also create a local process session to track state
-    // This provides a consistent interface for polling
+    // Create a placeholder local process session for compatibility
+    // Note: For node sessions, write/poll operations use the remote session
     const processSession = await this.processSessionManager.createSession(
-      command,
+      ["echo", "Remote session placeholder"],
       workingDirectory,
       userId,
-      {
-        pty: true,
-        env,
-      }
+      { pty: false }
     );
 
     const session: ClaudeCodeSession = {
@@ -288,6 +291,7 @@ export class ClaudeCodeSessionManager {
       nodeId: nodeInfo.nodeId,
       nodeName: nodeInfo.nodeName,
       isNodeSession: true,
+      remoteSessionId: remoteResult.remoteSessionId,
     };
 
     this.sessions.set(sessionId, session);
@@ -319,43 +323,47 @@ export class ClaudeCodeSessionManager {
 
     session.lastActivityAt = Date.now();
 
-    const result = this.processSessionManager.writeToSession(
-      session.processSessionId,
-      input
-    );
-
-    // If screen capture mode, also write to node and capture screen
-    if (session.useScreenCapture && session.isNodeSession && this.nodeExecutor) {
+    // If node session, write to the remote session
+    if (session.isNodeSession && session.remoteSessionId && this.nodeExecutor) {
       try {
-        // Send input to node via RPC (if needed)
-        // The local PTY and remote node are synchronized
-
-        // Wait a short time for the command to process before capturing
-        await new Promise((resolve) => setTimeout(resolve, 500));
-
-        // Capture screen from node
-        const captureResult = await this.requestScreenCapture(
-          session.userId,
-          session.nodeId
+        const writeResult = await this.nodeExecutor.writeToRemoteSession(
+          session.nodeId!,
+          session.remoteSessionId,
+          input
         );
 
+        // Wait configurable delay before capturing (allows UI to update)
+        await new Promise((resolve) => setTimeout(resolve, this.config.screenCaptureDelayMs));
+
+        // Capture screen and return combined result
+        const captureData = await this.captureScreenWithLogging(session);
+
         return {
-          ...result,
+          success: writeResult.success,
+          bytesWritten: writeResult.bytesWritten,
           useScreenCapture: session.useScreenCapture,
-          screenCaptureData: captureResult.imageData,
-          nodeId: session.nodeId,
-          nodeName: session.nodeName,
+          ...captureData,
         };
-      } catch {
-        // Screen capture failed, but write succeeded
+      } catch (error) {
+        console.error(
+          `[ClaudeCodeSessionManager] Write to remote session ${session.id} failed:`,
+          error instanceof Error ? error.message : error
+        );
         return {
-          ...result,
+          success: false,
+          bytesWritten: 0,
           useScreenCapture: session.useScreenCapture,
           nodeId: session.nodeId,
           nodeName: session.nodeName,
         };
       }
     }
+
+    // Local session: write to process
+    const result = this.processSessionManager.writeToSession(
+      session.processSessionId,
+      input
+    );
 
     return {
       ...result,
@@ -388,6 +396,36 @@ export class ClaudeCodeSessionManager {
 
     session.lastActivityAt = Date.now();
 
+    // If node session, poll from the remote session
+    if (session.isNodeSession && session.remoteSessionId && this.nodeExecutor) {
+      try {
+        const pollResult = await this.nodeExecutor.pollRemoteSession(
+          session.nodeId!,
+          session.remoteSessionId,
+          maxLines
+        );
+
+        // Also capture screen
+        const captureData = await this.captureScreenWithLogging(session);
+
+        return {
+          lines: pollResult.lines,
+          hasMore: pollResult.hasMore,
+          status: pollResult.status,
+          exitCode: pollResult.exitCode,
+          useScreenCapture: session.useScreenCapture,
+          ...captureData,
+        };
+      } catch (error) {
+        console.error(
+          `[ClaudeCodeSessionManager] Poll remote session ${session.id} failed:`,
+          error instanceof Error ? error.message : error
+        );
+        return null;
+      }
+    }
+
+    // Local session: poll from process
     const result = this.processSessionManager.pollOutput(
       session.processSessionId,
       maxLines
@@ -395,32 +433,6 @@ export class ClaudeCodeSessionManager {
 
     if (!result) {
       return null;
-    }
-
-    // If screen capture mode, also capture screen from node
-    if (session.useScreenCapture && session.isNodeSession && this.nodeExecutor) {
-      try {
-        const captureResult = await this.requestScreenCapture(
-          session.userId,
-          session.nodeId
-        );
-
-        return {
-          ...result,
-          useScreenCapture: session.useScreenCapture,
-          screenCaptureData: captureResult.imageData,
-          nodeId: session.nodeId,
-          nodeName: session.nodeName,
-        };
-      } catch {
-        // Screen capture failed, return result without capture data
-        return {
-          ...result,
-          useScreenCapture: session.useScreenCapture,
-          nodeId: session.nodeId,
-          nodeName: session.nodeName,
-        };
-      }
     }
 
     return {
@@ -494,32 +506,56 @@ export class ClaudeCodeSessionManager {
     }
 
     // Capture final screenshot before stopping (if screen capture mode)
-    let screenCaptureData: string | undefined;
-    if (session.useScreenCapture && session.isNodeSession && this.nodeExecutor) {
+    const captureData = await this.captureScreenWithLogging(session);
+
+    let exitCode: number | null = null;
+    let lastOutput: string | undefined;
+    let killSuccess = true;
+    let killMessage = "Session stopped";
+
+    // If node session, stop the remote session
+    if (session.isNodeSession && session.remoteSessionId && this.nodeExecutor) {
       try {
-        const captureResult = await this.requestScreenCapture(
-          session.userId,
-          session.nodeId
+        // Get last output from remote session before stopping
+        const pollResult = await this.nodeExecutor.pollRemoteSession(
+          session.nodeId!,
+          session.remoteSessionId,
+          100
         );
-        screenCaptureData = captureResult.imageData;
-      } catch {
-        // Screen capture failed, continue with stop
+        lastOutput = pollResult.lines.slice(-50).join("\n"); // Last 50 lines
+
+        // Stop remote session
+        const stopResult = await this.nodeExecutor.stopRemoteSession(
+          session.nodeId!,
+          session.remoteSessionId,
+          signal
+        );
+        exitCode = stopResult.exitCode;
+        killSuccess = stopResult.success;
+        killMessage = stopResult.success ? "Remote session stopped" : "Failed to stop remote session";
+      } catch (error) {
+        console.error(
+          `[ClaudeCodeSessionManager] Stop remote session ${session.id} failed:`,
+          error instanceof Error ? error.message : error
+        );
+        killSuccess = false;
+        killMessage = error instanceof Error ? error.message : "Failed to stop remote session";
       }
+    } else {
+      // Local session: kill process
+      const logResult = this.processSessionManager.getFullLog(session.processSessionId);
+      lastOutput = logResult?.log.slice(-2000);
+
+      const killResult = await this.processSessionManager.killSession(
+        session.processSessionId,
+        signal
+      );
+      killSuccess = killResult.success;
+      killMessage = killResult.message;
+
+      const processSession = this.processSessionManager.getSession(session.processSessionId);
+      exitCode = processSession?.exitCode ?? null;
     }
-
-    // Get last output before killing
-    const logResult = this.processSessionManager.getFullLog(session.processSessionId);
-    const lastOutput = logResult?.log.slice(-2000); // Last 2KB
-
-    const killResult = await this.processSessionManager.killSession(
-      session.processSessionId,
-      signal
-    );
-
-    // Get final status
-    const processSession = this.processSessionManager.getSession(
-      session.processSessionId
-    );
 
     // Update session counts
     const currentCount = this.userSessionCount.get(session.userId) ?? 0;
@@ -533,16 +569,54 @@ export class ClaudeCodeSessionManager {
     this.sessions.delete(sessionId);
 
     return {
-      success: killResult.success,
-      message: killResult.message,
-      status: processSession?.status ?? "killed",
-      exitCode: processSession?.exitCode ?? null,
+      success: killSuccess,
+      message: killMessage,
+      status: "killed",
+      exitCode,
       lastOutput,
       useScreenCapture: session.useScreenCapture,
-      screenCaptureData,
-      nodeId: session.nodeId,
-      nodeName: session.nodeName,
+      ...captureData,
     };
+  }
+
+  /**
+   * Helper method to capture screen with proper error logging
+   * Extracts common screen capture logic to reduce duplication
+   */
+  private async captureScreenWithLogging(
+    session: ClaudeCodeSession
+  ): Promise<{
+    screenCaptureData?: string;
+    nodeId?: string;
+    nodeName?: string;
+  }> {
+    if (!session.useScreenCapture || !session.isNodeSession || !this.nodeExecutor) {
+      return {
+        nodeId: session.nodeId,
+        nodeName: session.nodeName,
+      };
+    }
+
+    try {
+      const captureResult = await this.requestScreenCapture(
+        session.userId,
+        session.nodeId
+      );
+      return {
+        screenCaptureData: captureResult.imageData,
+        nodeId: session.nodeId,
+        nodeName: session.nodeName,
+      };
+    } catch (error) {
+      console.warn(
+        `[ClaudeCodeSessionManager] Screen capture failed for session ${session.id}:`,
+        error instanceof Error ? error.message : error
+      );
+      return {
+        nodeId: session.nodeId,
+        nodeName: session.nodeName,
+      };
+    }
   }
 
   /**
