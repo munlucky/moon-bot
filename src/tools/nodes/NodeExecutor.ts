@@ -647,9 +647,13 @@ export class NodeExecutor {
         throw new Error(result.error);
       }
 
+      // Validate bytesWritten field - be conservative about success
+      const bytesWritten = typeof result.bytesWritten === 'number' ? result.bytesWritten : 0;
+      const success = typeof result.bytesWritten === 'number' && result.bytesWritten > 0;
+
       return {
-        success: true,
-        bytesWritten: result.bytesWritten ?? input.length,
+        success,
+        bytesWritten,
       };
     }, this.config.retry, "Write to remote session");
   }

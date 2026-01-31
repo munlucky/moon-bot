@@ -515,16 +515,23 @@ export class ClaudeCodeSessionManager {
 
     // If node session, stop the remote session
     if (session.isNodeSession && session.remoteSessionId && this.nodeExecutor) {
+      // Get last output - best effort, should not prevent session stop
       try {
-        // Get last output from remote session before stopping
         const pollResult = await this.nodeExecutor.pollRemoteSession(
           session.nodeId!,
           session.remoteSessionId,
           100
         );
         lastOutput = pollResult.lines.slice(-50).join("\n"); // Last 50 lines
+      } catch (error) {
+        console.warn(
+          `[ClaudeCodeSessionManager] Could not poll last output for session ${session.id} before stopping:`,
+          error instanceof Error ? error.message : error
+        );
+      }
 
-        // Stop remote session
+      // Stop remote session - this must always be attempted
+      try {
         const stopResult = await this.nodeExecutor.stopRemoteSession(
           session.nodeId!,
           session.remoteSessionId,
