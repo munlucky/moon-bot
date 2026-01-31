@@ -78,6 +78,9 @@ export function createClaudeCodeStartTool(
             status: processSession?.status ?? "running",
             useScreenCapture: session.useScreenCapture,
             workingDirectory: session.workingDirectory,
+            nodeId: session.nodeId,
+            nodeName: session.nodeName,
+            isNodeSession: session.isNodeSession,
           },
           { durationMs: Date.now() - startTime }
         );
@@ -100,7 +103,7 @@ export function createClaudeCodeWriteTool(
 ): ToolSpec<ClaudeCodeWriteInput, ClaudeCodeWriteResult> {
   return {
     id: "claude_code.write",
-    description: "Write input to a Claude Code session",
+    description: "Write input to a Claude Code session. When useScreenCapture is true, includes screen capture after write.",
     schema: toJSONSchema(ClaudeCodeWriteInputSchema),
     requiresApproval: false,
     run: async (input, ctx) => {
@@ -127,7 +130,8 @@ export function createClaudeCodeWriteTool(
           );
         }
 
-        const result = sessionManager.writeToSession(input.sessionId, input.input);
+        // writeToSession is now async and includes screen capture data
+        const result = await sessionManager.writeToSession(input.sessionId, input.input);
 
         if (!result.success) {
           return ToolResultBuilder.failureWithDuration(
@@ -142,6 +146,9 @@ export function createClaudeCodeWriteTool(
             success: result.success,
             bytesWritten: result.bytesWritten,
             useScreenCapture: result.useScreenCapture,
+            screenCaptureData: result.screenCaptureData,
+            nodeId: result.nodeId,
+            nodeName: result.nodeName,
           },
           { durationMs: Date.now() - startTime }
         );
@@ -164,7 +171,7 @@ export function createClaudeCodePollTool(
 ): ToolSpec<ClaudeCodePollInput, ClaudeCodePollResult> {
   return {
     id: "claude_code.poll",
-    description: "Poll recent output from a Claude Code session",
+    description: "Poll recent output from a Claude Code session. When useScreenCapture is true, includes screen capture image data.",
     schema: toJSONSchema(ClaudeCodePollInputSchema),
     requiresApproval: false,
     run: async (input, ctx) => {
@@ -191,7 +198,8 @@ export function createClaudeCodePollTool(
           );
         }
 
-        const result = sessionManager.pollOutput(
+        // pollOutput is now async and includes screen capture data
+        const result = await sessionManager.pollOutput(
           input.sessionId,
           input.maxLines ?? 100
         );
@@ -211,6 +219,9 @@ export function createClaudeCodePollTool(
             status: result.status,
             exitCode: result.exitCode,
             useScreenCapture: result.useScreenCapture,
+            screenCaptureData: result.screenCaptureData,
+            nodeId: result.nodeId,
+            nodeName: result.nodeName,
           },
           { durationMs: Date.now() - startTime }
         );
@@ -233,7 +244,7 @@ export function createClaudeCodeStopTool(
 ): ToolSpec<ClaudeCodeStopInput, ClaudeCodeStopResult> {
   return {
     id: "claude_code.stop",
-    description: "Stop a Claude Code session",
+    description: "Stop a Claude Code session. When useScreenCapture is true, captures final screen before stopping.",
     schema: toJSONSchema(ClaudeCodeStopInputSchema),
     requiresApproval: false,
     run: async (input, ctx) => {
@@ -270,6 +281,10 @@ export function createClaudeCodeStopTool(
             exitCode: result.exitCode,
             message: result.message,
             lastOutput: result.lastOutput,
+            useScreenCapture: result.useScreenCapture,
+            screenCaptureData: result.screenCaptureData,
+            nodeId: result.nodeId,
+            nodeName: result.nodeName,
           },
           { durationMs: Date.now() - startTime }
         );

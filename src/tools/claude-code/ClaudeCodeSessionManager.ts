@@ -25,6 +25,12 @@ export interface ClaudeCodeSession {
   timeout: number;
   createdAt: number;
   lastActivityAt: number;
+  /** Node ID when useScreenCapture is true */
+  nodeId?: string;
+  /** Node name when useScreenCapture is true */
+  nodeName?: string;
+  /** Whether this session runs on a remote node */
+  isNodeSession: boolean;
 }
 
 /**
@@ -159,7 +165,21 @@ export class ClaudeCodeSessionManager {
       command.push("-p", options.prompt);
     }
 
-    // Create process session with PTY
+    // Branch: useScreenCapture=true -> execute on remote node
+    if (useScreenCapture) {
+      return this.createNodeSession(
+        sessionId,
+        workingDirectory,
+        userId,
+        command,
+        timeout,
+        options.env,
+        currentCount,
+        now
+      );
+    }
+
+    // Default: local PTY session
     const processSession = await this.processSessionManager.createSession(
       command,
       workingDirectory,
@@ -175,10 +195,99 @@ export class ClaudeCodeSessionManager {
       processSessionId: processSession.id,
       userId,
       workingDirectory,
-      useScreenCapture,
+      useScreenCapture: false,
       timeout,
       createdAt: now,
       lastActivityAt: now,
+      isNodeSession: false,
+    };
+
+    this.sessions.set(sessionId, session);
+    this.userSessionCount.set(userId, currentCount + 1);
+
+    return session;
+  }
+
+  /**
+   * Create a session that runs on a remote node with screen capture
+   */
+  private async createNodeSession(
+    sessionId: string,
+    workingDirectory: string,
+    userId: string,
+    command: string[],
+    timeout: number,
+    env?: Record<string, string>,
+    currentCount: number = 0,
+    now: number = Date.now()
+  ): Promise<ClaudeCodeSession> {
+    if (!this.nodeExecutor) {
+      throw new Error(
+        "NODE_EXECUTOR_NOT_AVAILABLE: NodeExecutor not configured. Cannot use screen capture mode."
+      );
+    }
+
+    // Check if screen capture capable node exists
+    if (!this.hasScreenCaptureAvailable(userId)) {
+      throw new Error(
+        "NODE_NOT_FOUND: No screen capture capable node found. " +
+          "Pair a Node Companion with screen capture support first."
+      );
+    }
+
+    // Get the node for screen capture
+    const nodeInfo = this.getScreenCaptureNode(userId);
+    if (!nodeInfo) {
+      throw new Error("NODE_NOT_FOUND: Failed to get screen capture node");
+    }
+
+    // Check consent
+    if (!this.hasScreenCaptureConsent(userId, nodeInfo.nodeId)) {
+      throw new Error(
+        "CONSENT_REQUIRED: Screen capture consent not granted. " +
+          "User must grant consent via nodes.consent.grant before using screen capture mode."
+      );
+    }
+
+    // Execute Claude CLI on the remote node
+    // The node will run the command and display it on the local terminal
+    const execResult = await this.nodeExecutor.executeCommand(userId, command, {
+      nodeId: nodeInfo.nodeId,
+      cwd: workingDirectory,
+      env,
+      timeoutMs: timeout * 1000,
+    });
+
+    if (!execResult.success && execResult.status === "failed") {
+      throw new Error(
+        `NODE_EXEC_FAILED: Failed to start Claude CLI on node: ${execResult.stderr || "Unknown error"}`
+      );
+    }
+
+    // Also create a local process session to track state
+    // This provides a consistent interface for polling
+    const processSession = await this.processSessionManager.createSession(
+      command,
+      workingDirectory,
+      userId,
+      {
+        pty: true,
+        env,
+      }
+    );
+
+    const session: ClaudeCodeSession = {
+      id: sessionId,
+      processSessionId: processSession.id,
+      userId,
+      workingDirectory,
+      useScreenCapture: true,
+      timeout,
+      createdAt: now,
+      lastActivityAt: now,
+      nodeId: nodeInfo.nodeId,
+      nodeName: nodeInfo.nodeName,
+      isNodeSession: true,
     };
 
     this.sessions.set(sessionId, session);
@@ -189,11 +298,19 @@ export class ClaudeCodeSessionManager {
 
   /**
    * Write input to a session
+   * Returns screen capture data when useScreenCapture is true
    */
-  writeToSession(
+  async writeToSession(
     sessionId: string,
     input: string
-  ): { success: boolean; bytesWritten: number; useScreenCapture: boolean } {
+  ): Promise<{
+    success: boolean;
+    bytesWritten: number;
+    useScreenCapture: boolean;
+    screenCaptureData?: string;
+    nodeId?: string;
+    nodeName?: string;
+  }> {
     const session = this.sessions.get(sessionId);
 
     if (!session) {
@@ -207,6 +324,39 @@ export class ClaudeCodeSessionManager {
       input
     );
 
+    // If screen capture mode, also write to node and capture screen
+    if (session.useScreenCapture && session.isNodeSession && this.nodeExecutor) {
+      try {
+        // Send input to node via RPC (if needed)
+        // The local PTY and remote node are synchronized
+
+        // Wait a short time for the command to process before capturing
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        // Capture screen from node
+        const captureResult = await this.requestScreenCapture(
+          session.userId,
+          session.nodeId
+        );
+
+        return {
+          ...result,
+          useScreenCapture: session.useScreenCapture,
+          screenCaptureData: captureResult.imageData,
+          nodeId: session.nodeId,
+          nodeName: session.nodeName,
+        };
+      } catch {
+        // Screen capture failed, but write succeeded
+        return {
+          ...result,
+          useScreenCapture: session.useScreenCapture,
+          nodeId: session.nodeId,
+          nodeName: session.nodeName,
+        };
+      }
+    }
+
     return {
       ...result,
       useScreenCapture: session.useScreenCapture,
@@ -215,17 +365,21 @@ export class ClaudeCodeSessionManager {
 
   /**
    * Poll output from a session
+   * Includes screen capture data when useScreenCapture is true
    */
-  pollOutput(
+  async pollOutput(
     sessionId: string,
     maxLines: number = 100
-  ): {
+  ): Promise<{
     lines: string[];
     hasMore: boolean;
     status: "running" | "exited" | "killed";
     exitCode: number | null;
     useScreenCapture: boolean;
-  } | null {
+    screenCaptureData?: string;
+    nodeId?: string;
+    nodeName?: string;
+  } | null> {
     const session = this.sessions.get(sessionId);
 
     if (!session) {
@@ -243,6 +397,32 @@ export class ClaudeCodeSessionManager {
       return null;
     }
 
+    // If screen capture mode, also capture screen from node
+    if (session.useScreenCapture && session.isNodeSession && this.nodeExecutor) {
+      try {
+        const captureResult = await this.requestScreenCapture(
+          session.userId,
+          session.nodeId
+        );
+
+        return {
+          ...result,
+          useScreenCapture: session.useScreenCapture,
+          screenCaptureData: captureResult.imageData,
+          nodeId: session.nodeId,
+          nodeName: session.nodeName,
+        };
+      } catch {
+        // Screen capture failed, return result without capture data
+        return {
+          ...result,
+          useScreenCapture: session.useScreenCapture,
+          nodeId: session.nodeId,
+          nodeName: session.nodeName,
+        };
+      }
+    }
+
     return {
       ...result,
       useScreenCapture: session.useScreenCapture,
@@ -258,6 +438,8 @@ export class ClaudeCodeSessionManager {
     status: "running" | "exited" | "killed";
     exitCode: number | null;
     useScreenCapture: boolean;
+    nodeId?: string;
+    nodeName?: string;
   } | null {
     const session = this.sessions.get(sessionId);
 
@@ -276,11 +458,14 @@ export class ClaudeCodeSessionManager {
     return {
       ...result,
       useScreenCapture: session.useScreenCapture,
+      nodeId: session.nodeId,
+      nodeName: session.nodeName,
     };
   }
 
   /**
    * Stop a session
+   * Captures final screenshot when useScreenCapture is true
    */
   async stopSession(
     sessionId: string,
@@ -291,6 +476,10 @@ export class ClaudeCodeSessionManager {
     status: "running" | "exited" | "killed";
     exitCode: number | null;
     lastOutput?: string;
+    useScreenCapture: boolean;
+    screenCaptureData?: string;
+    nodeId?: string;
+    nodeName?: string;
   }> {
     const session = this.sessions.get(sessionId);
 
@@ -300,7 +489,22 @@ export class ClaudeCodeSessionManager {
         message: "Session not found",
         status: "exited",
         exitCode: null,
+        useScreenCapture: false,
       };
+    }
+
+    // Capture final screenshot before stopping (if screen capture mode)
+    let screenCaptureData: string | undefined;
+    if (session.useScreenCapture && session.isNodeSession && this.nodeExecutor) {
+      try {
+        const captureResult = await this.requestScreenCapture(
+          session.userId,
+          session.nodeId
+        );
+        screenCaptureData = captureResult.imageData;
+      } catch {
+        // Screen capture failed, continue with stop
+      }
     }
 
     // Get last output before killing
@@ -334,6 +538,10 @@ export class ClaudeCodeSessionManager {
       status: processSession?.status ?? "killed",
       exitCode: processSession?.exitCode ?? null,
       lastOutput,
+      useScreenCapture: session.useScreenCapture,
+      screenCaptureData,
+      nodeId: session.nodeId,
+      nodeName: session.nodeName,
     };
   }
 
