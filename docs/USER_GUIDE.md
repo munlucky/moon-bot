@@ -357,13 +357,20 @@ Slack 앱을 생성하고 Moonbot에 연결하는 방법입니다.
 3. 페이지 상단의 **Install to Workspace** 클릭
 4. **Bot User OAuth Token** 복사 (`xoxb-`로 시작)
 
-#### 3. Event Subscriptions 설정
+#### 3. Socket Mode 활성화
+
+1. 왼쪽 메뉴에서 **Socket Mode** 클릭 후 활성화
+2. 토큰 이름(예: `moonbot-socket-token`)을 지정하고 **Generate** 클릭
+3. 생성된 App-Level Token (`xapp-...`)을 복사하여 `SLACK_APP_TOKEN` 환경 변수에 설정
+
+#### 4. Event Subscriptions 설정
 
 1. **Event Subscriptions** 메뉴에서 **Enable Events** 활성화
-2. Request URL에 Gateway 엔드포인트 입력
-3. **Subscribe to bot events**에서 `app_mention` 추가
+2. **Subscribe to bot events**에서 `app_mention` 추가
 
-#### 4. Moonbot에 Slack 채널 등록
+> **참고**: Socket Mode에서는 Request URL이 필요하지 않습니다.
+
+#### 5. Moonbot에 Slack 채널 등록
 
 ```bash
 moonbot channel add my-slack \
@@ -372,8 +379,6 @@ moonbot channel add my-slack \
   --name "My Slack Bot" \
   --enable
 ```
-
-> **참고**: Slack 앱에 Signing Secret도 설정해야 할 수 있습니다. 환경 변수 `SLACK_SIGNING_SECRET`에 설정하세요.
 
 ---
 
@@ -392,9 +397,9 @@ Telegram Bot 생성 및 토큰 발급 가이드는 Telegram 채널 어댑터 구
 | `MOONBOT_DISCORD_TOKEN` | Discord 봇 토큰 | - |
 | `MOONBOT_GATEWAY_PORT` | Gateway 포트 | 18789 |
 | `MOONBOT_GATEWAY_HOST` | Gateway 호스트 | 127.0.0.1 |
-| `SLACK_BOT_TOKEN` | Slack 봇 토큰 | - |
-| `SLACK_SIGNING_SECRET` | Slack Signing Secret | - |
-| `SLACK_APP_TOKEN` | Slack App-Level 토큰 (Socket Mode) | - |
+| `SLACK_BOT_TOKEN` | Slack 봇 토큰 (`xoxb-...`) | - |
+| `SLACK_APP_TOKEN` | Slack App-Level 토큰 (Socket Mode, `xapp-...`) | - |
+| `SLACK_SIGNING_SECRET` | Slack Signing Secret (HTTP 방식 전용) | - |
 | `OPENAI_API_KEY` | OpenAI API 키 | - |
 | `ZAI_API_KEY` / `GLM_API_KEY` | GLM API 키 | - |
 
