@@ -41,7 +41,7 @@ export class JsonRpcServer {
 
       // Invalid message
       return this.createError(parsed.id ?? null, -32600, "Invalid Request");
-    } catch (error) {
+    } catch {
       return this.createError(null, -32700, "Parse error");
     }
   }
@@ -55,8 +55,8 @@ export class JsonRpcServer {
 
     // Validate params type (must be object or array if present)
     if (request.params !== undefined && request.params !== null) {
-      const paramsType = typeof request.params;
-      if (paramsType !== "object") {
+      const _paramsType = typeof request.params; // Reserved for future use
+      if (_paramsType !== "object") {
         return this.createError(request.id, -32602, "Invalid params", "params must be an object or array");
       }
     }

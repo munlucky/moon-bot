@@ -8,7 +8,6 @@ import type { ILLMProvider } from "./types.js";
 import { ToolCallParser, TOOL_ALIASES } from "./ToolCallParser.js";
 import {
   SystemPromptBuilder,
-  type SystemPromptConfig,
   type WorkspaceConfig,
   type RuntimeInfo,
   type UserInfo,

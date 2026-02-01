@@ -24,7 +24,7 @@ async function tailLog(filePath: string, filterError: boolean): Promise<void> {
   printInfo("Following log file (Ctrl+C to stop)...");
 
   const readStream = createReadStream(filePath, { encoding: "utf-8", flags: "r" });
-  const rl = createInterface({ input: readStream, crlfDelay: Infinity });
+  // const rl = createInterface({ input: readStream, crlfDelay: Infinity }); // Reserved for future use
 
   // Start from end of file
   const stats = await fs.promises.stat(filePath);

@@ -1,7 +1,6 @@
 // Approval system types for Phase 2: Approval UI Flow Integration
 
 import type { ToolResult } from "../../types/index.js";
-import type { EventEmitter } from "events";
 
 export interface ApprovalRequest {
   id: string;

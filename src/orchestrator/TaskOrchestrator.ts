@@ -5,8 +5,8 @@
  * Coordinates between Gateway (via RPC) and task execution logic.
  */
 
-import type { Task, TaskResponse, TaskState, ChatMessage } from "../types/index.js";
-import type { CreateTaskParams, OrchestratorConfig, TaskResult, ApprovalRequestEvent, ApprovalResolvedEvent } from "./types.js";
+import type { Task, TaskState, TaskResponse } from "../types/index.js";
+import type { CreateTaskParams, OrchestratorConfig, ApprovalRequestEvent, ApprovalResolvedEvent } from "./types.js";
 import { TaskRegistry } from "./TaskRegistry.js";
 import { PerChannelQueue } from "./PerChannelQueue.js";
 import { createLogger, type Logger, type LayerLogger, runWithTraceAsync, getTraceContext } from "../utils/logger.js";

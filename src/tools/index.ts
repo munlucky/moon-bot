@@ -2,7 +2,8 @@
 
 import path from "path";
 import { createLogger, type Logger } from "../utils/logger.js";
-import type { SystemConfig, ToolSpec, ToolContext, ToolResult, ToolDefinition, ToolMeta } from "../types/index.js";
+import type { SystemConfig, ToolSpec } from "../types/index.js";
+import type { ToolDefinition } from "../types/index.js";
 import { ToolRuntime } from "./runtime/ToolRuntime.js";
 import { ApprovalManager } from "./runtime/ApprovalManager.js";
 import { filterToolsByProfile, type ToolProfile } from "./policy/ToolProfile.js";
@@ -38,6 +39,17 @@ import {
   NodeExecutor,
 } from "./nodes/index.js";
 import { createNodesTools } from "./nodes/NodesTool.js";
+
+/**
+ * Extended Toolkit interface with additional resources for cleanup.
+ */
+export interface ToolkitWithResources extends Toolkit {
+  browserTool?: BrowserTool;
+  processSessionManager?: ProcessSessionManager;
+  claudeCodeSessionManager?: ClaudeCodeSessionManager;
+  nodeSessionManager?: NodeSessionManager;
+  nodeExecutor?: NodeExecutor;
+}
 
 export class Toolkit {
   private tools = new Map<string, ToolSpec>();
@@ -201,7 +213,7 @@ export async function createGatewayTools(
     candidateTools.push(...createBrowserTools(browserTool));
 
     // Store browser tool reference for cleanup
-    (toolkit as any).browserTool = browserTool;
+    (toolkit as ToolkitWithResources).browserTool = browserTool;
   }
 
   // Process tools (for interactive terminal sessions)
@@ -271,10 +283,10 @@ export async function createGatewayTools(
   }, 5 * 60 * 1000); // Every 5 minutes
 
   // Store session manager references for cleanup
-  (toolkit as any).processSessionManager = processSessionManager;
-  (toolkit as any).claudeCodeSessionManager = claudeCodeSessionManager;
-  (toolkit as any).nodeSessionManager = nodeSessionManager;
-  (toolkit as any).nodeExecutor = nodeExecutor;
+  (toolkit as ToolkitWithResources).processSessionManager = processSessionManager;
+  (toolkit as ToolkitWithResources).claudeCodeSessionManager = claudeCodeSessionManager;
+  (toolkit as ToolkitWithResources).nodeSessionManager = nodeSessionManager;
+  (toolkit as ToolkitWithResources).nodeExecutor = nodeExecutor;
 
   // Filter tools by profile and register
   const filteredTools = filterToolsByProfile(candidateTools, profile);
@@ -331,4 +343,4 @@ export function validateFilePath(inputPath: string, allowedDir: string): string 
 // Re-export for convenience
 export { ToolRuntime, ApprovalManager };
 export { ToolResultBuilder } from "./runtime/ToolResultBuilder.js";
-export type { ToolContext, ToolResult, ToolDefinition, ToolMeta };
+// ToolContext, ToolResult, ToolDefinition, ToolMeta are already imported above

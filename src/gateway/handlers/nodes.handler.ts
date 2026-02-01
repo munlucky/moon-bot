@@ -16,8 +16,8 @@ import type { SystemConfig } from "../../types/index.js";
 export function createNodesHandlers(
   sessionManager: NodeSessionManager,
   commandValidator: NodeCommandValidator,
-  config: SystemConfig,
-  sendToNode: (nodeId: string, message: unknown) => boolean
+  _config: SystemConfig,
+  _sendToNode: (nodeId: string, message: unknown) => boolean
 ): Map<string, JsonRpcHandler> {
   const handlers = new Map<string, JsonRpcHandler>();
 
@@ -139,7 +139,7 @@ export function createNodesHandlers(
     }
 
     // Send command to node
-    const success = sendToNode(node.nodeId, {
+    const success = _sendToNode(node.nodeId, {
       jsonrpc: "2.0",
       method: "nodes.exec",
       params: {
@@ -203,7 +203,7 @@ export function createNodesHandlers(
     }
 
     // Send capture request to node
-    const success = sendToNode(node.nodeId, {
+    const success = _sendToNode(node.nodeId, {
       jsonrpc: "2.0",
       method: "nodes.capture",
       params: {},

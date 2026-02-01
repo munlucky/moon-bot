@@ -91,7 +91,7 @@ export class ClaudeCodeSessionManager {
     }
 
     try {
-      const { stdout } = await execAsync(`${this.config.claudeCliPath} --version`);
+      const { stdout: _stdout } = await execAsync(`${this.config.claudeCliPath} --version`);
       this.claudeCliAvailable = true;
       return {
         available: true,
@@ -324,10 +324,10 @@ export class ClaudeCodeSessionManager {
     session.lastActivityAt = Date.now();
 
     // If node session, write to the remote session
-    if (session.isNodeSession && session.remoteSessionId && this.nodeExecutor) {
+    if (session.isNodeSession && session.nodeId && session.remoteSessionId && this.nodeExecutor) {
       try {
         const writeResult = await this.nodeExecutor.writeToRemoteSession(
-          session.nodeId!,
+          session.nodeId,
           session.remoteSessionId,
           input
         );
@@ -397,10 +397,10 @@ export class ClaudeCodeSessionManager {
     session.lastActivityAt = Date.now();
 
     // If node session, poll from the remote session
-    if (session.isNodeSession && session.remoteSessionId && this.nodeExecutor) {
+    if (session.isNodeSession && session.nodeId && session.remoteSessionId && this.nodeExecutor) {
       try {
         const pollResult = await this.nodeExecutor.pollRemoteSession(
-          session.nodeId!,
+          session.nodeId,
           session.remoteSessionId,
           maxLines
         );
@@ -514,11 +514,11 @@ export class ClaudeCodeSessionManager {
     let killMessage = "Session stopped";
 
     // If node session, stop the remote session
-    if (session.isNodeSession && session.remoteSessionId && this.nodeExecutor) {
+    if (session.isNodeSession && session.nodeId && session.remoteSessionId && this.nodeExecutor) {
       // Get last output - best effort, should not prevent session stop
       try {
         const pollResult = await this.nodeExecutor.pollRemoteSession(
-          session.nodeId!,
+          session.nodeId,
           session.remoteSessionId,
           100
         );
@@ -533,7 +533,7 @@ export class ClaudeCodeSessionManager {
       // Stop remote session - this must always be attempted
       try {
         const stopResult = await this.nodeExecutor.stopRemoteSession(
-          session.nodeId!,
+          session.nodeId,
           session.remoteSessionId,
           signal
         );

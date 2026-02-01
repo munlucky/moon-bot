@@ -114,11 +114,13 @@ export class Executor {
         // Mark step success in replanner
         this.replanner.markStepSuccess(step.id);
       } else {
-        errors.set(step.id, stepResult.error!);
+        if (stepResult.error) {
+          errors.set(step.id, stepResult.error);
+        }
 
         messages.push({
           type: "error",
-          content: `Step "${step.description}" failed: ${stepResult.error!.message}`,
+          content: `Step "${step.description}" failed: ${stepResult.error?.message ?? "Unknown error"}`,
           timestamp: Date.now(),
           metadata: { stepId: step.id },
         });
@@ -203,9 +205,9 @@ export class Executor {
         remainingGoals: allSteps
           .filter((s) => !completedSteps.has(s.id) && s.id !== step.id)
           .map((s) => s.description),
-        completedSteps: Array.from(completedSteps).map((id) =>
-          allSteps.find((s) => s.id === id)!
-        ),
+        completedSteps: Array.from(completedSteps)
+          .map((id) => allSteps.find((s) => s.id === id))
+          .filter((step): step is Step => step !== undefined),
         failedStep: step,
         startTime: Date.now(),
       };
@@ -238,10 +240,14 @@ export class Executor {
             reason: recoveryPlan.reason,
           });
 
+          if (!recoveryPlan.toolId) {
+            return { success: false, error: err, abort: true };
+          }
+
           // Create alternative step
           const alternativeStep: Step = {
             ...step,
-            toolId: recoveryPlan.toolId!,
+            toolId: recoveryPlan.toolId,
           };
 
           return this.executeStepWithRetry(

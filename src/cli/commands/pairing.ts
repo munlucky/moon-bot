@@ -25,7 +25,7 @@ export async function pairingStatus(options: CliOptions): Promise<void> {
 }
 
 /** Pairing approve command */
-export async function pairingApprove(token: string, options: CliOptions): Promise<void> {
+export async function pairingApprove(token: string, _options: CliOptions): Promise<void> {
   try {
     const client = new GatewayRpcClient();
 
@@ -49,7 +49,7 @@ export async function pairingApprove(token: string, options: CliOptions): Promis
 }
 
 /** Pairing revoke command */
-export async function pairingRevoke(id: string, options: CliOptions): Promise<void> {
+export async function pairingRevoke(id: string, _options: CliOptions): Promise<void> {
   try {
     const client = new GatewayRpcClient();
 

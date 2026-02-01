@@ -119,7 +119,8 @@ const RETRYABLE_ERROR_CODES = [
  */
 function isRetryableError(error: Error): boolean {
   const message = error.message;
-  const code = (error as any).code;
+  // Node.js errors have a 'code' property (e.g., 'ECONNREFUSED', 'ETIMEDOUT')
+  const code = (error as Error & { code?: string }).code;
 
   // Check error code
   if (code && RETRYABLE_ERROR_CODES.includes(code)) {
@@ -351,11 +352,16 @@ export class NodeExecutor {
       throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
     }
 
+    const rpcSender = this.rpcSender;
+    if (!rpcSender) {
+      throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
+    }
+
     const timeout = timeoutMs ?? this.config.defaultTimeoutMs;
 
     // Execute with retry logic
     return executeWithRetry(async () => {
-      const result = await this.rpcSender!(node.nodeId, "nodes.capture", {}, { timeoutMs: timeout }) as {
+      const result = await rpcSender(node.nodeId, "nodes.capture", {}, { timeoutMs: timeout }) as {
         imageData?: string;
         error?: string;
       };
@@ -411,11 +417,16 @@ export class NodeExecutor {
       throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
     }
 
+    const rpcSender = this.rpcSender;
+    if (!rpcSender) {
+      throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
+    }
+
     const timeout = options.timeoutMs ?? this.config.defaultTimeoutMs;
 
     // Execute with retry logic
     return executeWithRetry(async () => {
-      const result = await this.rpcSender!(node.nodeId, "nodes.exec", {
+      const result = await rpcSender(node.nodeId, "nodes.exec", {
         argv,
         cwd: options.cwd,
         env: options.env,
@@ -580,11 +591,16 @@ export class NodeExecutor {
       throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
     }
 
+    const rpcSender = this.rpcSender;
+    if (!rpcSender) {
+      throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
+    }
+
     const timeout = options.timeoutMs ?? this.config.defaultTimeoutMs;
 
     // Execute with retry logic - start interactive session on node
     return executeWithRetry(async () => {
-      const result = await this.rpcSender!(node.nodeId, "nodes.session.start", {
+      const result = await rpcSender(node.nodeId, "nodes.session.start", {
         argv,
         cwd: options.cwd,
         env: options.env,
@@ -634,8 +650,13 @@ export class NodeExecutor {
       throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
     }
 
+    const rpcSender = this.rpcSender;
+    if (!rpcSender) {
+      throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
+    }
+
     return executeWithRetry(async () => {
-      const result = await this.rpcSender!(nodeId, "nodes.session.write", {
+      const result = await rpcSender(nodeId, "nodes.session.write", {
         sessionId: remoteSessionId,
         input,
       }, { timeoutMs: this.config.defaultTimeoutMs }) as {
@@ -680,8 +701,13 @@ export class NodeExecutor {
       throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
     }
 
+    const rpcSender = this.rpcSender;
+    if (!rpcSender) {
+      throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
+    }
+
     return executeWithRetry(async () => {
-      const result = await this.rpcSender!(nodeId, "nodes.session.poll", {
+      const result = await rpcSender(nodeId, "nodes.session.poll", {
         sessionId: remoteSessionId,
         maxLines,
       }, { timeoutMs: this.config.defaultTimeoutMs }) as {
@@ -727,8 +753,13 @@ export class NodeExecutor {
       throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
     }
 
+    const rpcSender = this.rpcSender;
+    if (!rpcSender) {
+      throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
+    }
+
     return executeWithRetry(async () => {
-      const result = await this.rpcSender!(nodeId, "nodes.session.stop", {
+      const result = await rpcSender(nodeId, "nodes.session.stop", {
         sessionId: remoteSessionId,
         signal,
       }, { timeoutMs: this.config.defaultTimeoutMs }) as {

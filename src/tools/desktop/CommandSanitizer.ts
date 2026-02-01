@@ -1,5 +1,7 @@
 // Command sanitization for dangerous pattern detection
 
+import { PathValidator } from "../filesystem/PathValidator.js";
+
 export interface SanitizationResult {
   safe: boolean;
   reason?: string;
@@ -147,7 +149,6 @@ export class CommandSanitizer {
     }
 
     // Check CWD is within workspace
-    const { PathValidator } = require("../filesystem/PathValidator.js");
     const pathValidation = PathValidator.validate(cwd, workspaceRoot);
 
     if (!pathValidation.valid) {

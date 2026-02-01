@@ -355,7 +355,12 @@ If you're unsure whether an action is safe, ask the user before proceeding.`;
    * Build workspace section.
    */
   private buildWorkspaceSection(): string {
-    const { root, sandbox, sandboxType } = this.config.workspace!;
+    const workspace = this.config.workspace;
+    if (!workspace) {
+      return "## Workspace\n\nNo workspace configured.";
+    }
+
+    const { root, sandbox, sandboxType } = workspace;
 
     let section = `## Workspace
 
@@ -373,7 +378,12 @@ Stay within this directory unless explicitly instructed otherwise.`;
    * Build user info section.
    */
   private buildUserInfoSection(): string {
-    const { timezone, locale, userId } = this.config.userInfo!;
+    const userInfo = this.config.userInfo;
+    if (!userInfo) {
+      return "";
+    }
+
+    const { timezone, locale, userId } = userInfo;
     const now = new Date();
 
     let section = `## User Context`;
@@ -401,7 +411,12 @@ Stay within this directory unless explicitly instructed otherwise.`;
    * Build extensions section.
    */
   private buildExtensionsSection(): string | null {
-    const { additionalContext, customSections } = this.config.extensions!;
+    const extensions = this.config.extensions;
+    if (!extensions) {
+      return null;
+    }
+
+    const { additionalContext, customSections } = extensions;
 
     const parts: string[] = [];
 
@@ -466,7 +481,12 @@ Respond ONLY with valid JSON:
    * Build runtime information section.
    */
   private buildRuntimeSection(): string {
-    const { agentId, model, channelId, host, os } = this.config.runtime!;
+    const runtime = this.config.runtime;
+    if (!runtime) {
+      return "";
+    }
+
+    const { agentId, model, channelId, host, os } = runtime;
 
     const parts = [`Agent: ${agentId}`, `Model: ${model}`];
 

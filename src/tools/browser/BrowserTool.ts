@@ -3,7 +3,7 @@
 
 import type { ToolSpec } from "../../types/index.js";
 import { SessionManager } from "./SessionManager.js";
-import type { Browser, Page } from "playwright";
+import type { Browser } from "playwright";
 import { ToolResultBuilder } from "../runtime/ToolResultBuilder.js";
 import {
   BrowserStartInputSchema,
@@ -13,13 +13,6 @@ import {
   BrowserScreenshotInputSchema,
   BrowserCloseInputSchema,
   BrowserExtractInputSchema,
-  BrowserStartResultSchema,
-  BrowserGotoResultSchema,
-  BrowserSnapshotResultSchema,
-  BrowserActResultSchema,
-  BrowserScreenshotResultSchema,
-  BrowserCloseResultSchema,
-  BrowserExtractResultSchema,
   toJSONSchema,
   type BrowserStartInput,
   type BrowserGotoInput,
@@ -244,18 +237,21 @@ export class BrowserTool {
 
     try {
       switch (input.kind) {
-        case "text":
+        case "text": {
           const text = await session.page.textContent(input.selector);
           return { content: text ?? "" };
-        case "html":
+        }
+        case "html": {
           const html = await session.page.innerHTML(input.selector);
           return { content: html };
-        case "attribute":
+        }
+        case "attribute": {
           if (!input.attribute) {
             throw new Error("Attribute name is required for attribute extraction");
           }
           const attr = await session.page.getAttribute(input.selector, input.attribute);
           return { content: attr ?? "" };
+        }
         default:
           throw new Error(`Unknown extraction kind: ${input.kind}`);
       }

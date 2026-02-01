@@ -11,7 +11,7 @@ import { maskToken } from "../../config/manager.js";
  */
 export function createChannelHandlers(
   config: SystemConfig,
-  updateConfig: (newConfig: SystemConfig) => void
+  _updateConfig: (newConfig: SystemConfig) => void
 ): Map<string, JsonRpcHandler> {
   const handlers = new Map<string, JsonRpcHandler>();
 
@@ -50,7 +50,7 @@ export function createChannelHandlers(
     };
 
     config.channels.push(newChannel);
-    updateConfig(config);
+    _updateConfig(config);
 
     return {
       success: true,
@@ -75,7 +75,7 @@ export function createChannelHandlers(
     }
 
     const removed = config.channels.splice(index, 1)[0];
-    updateConfig(config);
+    _updateConfig(config);
 
     return {
       success: true,
@@ -101,7 +101,7 @@ export function createChannelHandlers(
 
     channel.enabled = true;
     channel.lastUpdated = new Date().toISOString();
-    updateConfig(config);
+    _updateConfig(config);
 
     return {
       success: true,
@@ -127,7 +127,7 @@ export function createChannelHandlers(
 
     channel.enabled = false;
     channel.lastUpdated = new Date().toISOString();
-    updateConfig(config);
+    _updateConfig(config);
 
     return {
       success: true,

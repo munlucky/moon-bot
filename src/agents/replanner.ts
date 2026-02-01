@@ -152,7 +152,7 @@ export class Replanner {
         const attemptedAlts = this.limiter
           .getAttempts(failure.step.id)
           .filter((a) => a.action === RecoveryAction.USE_ALTERNATIVE)
-          .map((a) => a.alternativeToolId!)
+          .map((a) => a.alternativeToolId)
           .filter((id): id is string => id !== undefined);
 
         const alternative = this.selector.selectBest(failure, failureType, attemptedAlts);

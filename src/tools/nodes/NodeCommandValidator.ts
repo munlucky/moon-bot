@@ -274,9 +274,11 @@ export class NodeCommandValidator {
 
     return argvArray.map((arg) => {
       // Remove null bytes and other dangerous characters
+      /* eslint-disable no-control-regex */
       return arg
         .replace(/\0/g, "")
         .replace(/[\x00-\x1F\x7F]/g, "");
+      /* eslint-enable no-control-regex */
     });
   }
 

@@ -21,7 +21,8 @@ export function loadConfig(configPath?: string): SystemConfig {
     const config = JSON.parse(content) as SystemConfig;
     const merged = mergeWithDefaults(config);
     return applyEnvironmentVariables(merged);
-  } catch (error) {
+  } catch {
+    // Error loading config, using defaults
     console.warn(`Failed to load config from ${filePath}, using defaults`);
     const defaults = getDefaultConfig();
     return applyEnvironmentVariables(defaults);

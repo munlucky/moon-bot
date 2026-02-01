@@ -9,7 +9,6 @@ import { ToolResultBuilder } from "../runtime/ToolResultBuilder.js";
 import {
   SystemRunInputSchema,
   SystemRunRawInputSchema,
-  SystemRunResultSchema,
   toJSONSchema,
   type SystemRunInput,
   type SystemRunRawInput,
@@ -76,13 +75,13 @@ export function createSystemRunTool(approvalManager: ApprovalManager): ToolSpec<
 /**
  * Create system.runRaw tool (deprecated/dangerous, requires explicit approval).
  */
-export function createSystemRunRawTool(approvalManager: ApprovalManager): ToolSpec<SystemRunRawInput, SystemRunResult> {
+export function createSystemRunRawTool(_approvalManager: ApprovalManager): ToolSpec<SystemRunRawInput, SystemRunResult> {
   return {
     id: "system.runRaw",
     description: "[DANGEROUS] Execute raw shell command (DEPRECATED)",
     schema: toJSONSchema(SystemRunRawInputSchema),
     requiresApproval: true,
-    run: async (input, ctx) => {
+    run: async (_input, _ctx) => {
       const startTime = Date.now();
 
       try {

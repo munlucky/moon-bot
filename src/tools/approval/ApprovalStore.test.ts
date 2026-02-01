@@ -366,6 +366,7 @@ describe('ApprovalStore', () => {
       const valid = createMockRequest({ id: 'valid-1', status: 'pending', expiresAt: now + 10000 });
 
       store.getAll = () => [expired1, expired2, valid];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (store as any).requests = new Map([
         ['expired-1', expired1],
         ['expired-2', expired2],
@@ -386,6 +387,7 @@ describe('ApprovalStore', () => {
       const valid1 = createMockRequest({ id: 'valid-1', status: 'pending', expiresAt: now + 10000 });
       const valid2 = createMockRequest({ id: 'valid-2', status: 'pending', expiresAt: now + 20000 });
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (store as any).requests = new Map([
         ['valid-1', valid1],
         ['valid-2', valid2],
@@ -402,6 +404,7 @@ describe('ApprovalStore', () => {
       const approvedExpired = createMockRequest({ id: 'approved-1', status: 'approved', expiresAt: now - 1000 });
       const rejectedExpired = createMockRequest({ id: 'rejected-1', status: 'rejected', expiresAt: now - 1000 });
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (store as any).requests = new Map([
         ['approved-1', approvedExpired],
         ['rejected-1', rejectedExpired],

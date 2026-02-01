@@ -55,8 +55,9 @@ export class SessionManager {
   }
 
   async load(sessionId: string): Promise<Session | null> {
-    if (this.sessions.has(sessionId)) {
-      return this.sessions.get(sessionId)!;
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      return session;
     }
 
     const filePath = this.getSessionPath(sessionId);

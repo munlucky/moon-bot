@@ -39,7 +39,7 @@ export class RecoveryLimiter {
   /**
    * Check if recovery is possible for a failure
    */
-  canRecover(_failure: ToolFailure): boolean {
+  canRecover(/* _failure: ToolFailure - reserved for future use */): boolean {
     // Check global timeout
     const elapsed = Date.now() - this.globalStartTime;
     if (elapsed > this.config.globalTimeout) {
@@ -137,7 +137,7 @@ export class RecoveryLimiter {
       this.attempts.set(stepId, []);
     }
 
-    this.attempts.get(stepId)!.push(attempt);
+    this.attempts.get(stepId)?.push(attempt) ?? this.attempts.set(stepId, [attempt]);
 
     if (this.config.logRecovery) {
       this.logger.info("Recovery attempt recorded", {

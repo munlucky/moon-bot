@@ -56,7 +56,8 @@ export class AlternativeSelector {
   /**
    * Find alternative tools for a failed tool
    */
-  findAlternatives(failure: ToolFailure, _failureType: FailureType): AlternativeTool[] {
+  findAlternatives(failure: ToolFailure, // _failureType: FailureType - reserved for future use
+  ): AlternativeTool[] {
     const { toolId } = failure;
 
     // Get configured alternatives

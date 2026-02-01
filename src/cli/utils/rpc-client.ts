@@ -38,15 +38,18 @@ export class GatewayRpcClient {
   private ws: WebSocket | null = null;
   private messageId = 0;
   private pendingRequests = new Map<number | string, {
-    resolve: (value: unknown) => void;
-    reject: (error: Error) => void;
+    resolve: (_value: unknown) => void;
+    reject: (_error: Error) => void;
   }>();
 
+  // Constructor parameters reserved for future custom connection logic
   constructor(
-    private host: string = "localhost",
-    private port: number = 18789,
-    private timeout: number = 5000
-  ) {}
+    private _host: string = "localhost",
+    private _port: number = 18789,
+    private _timeout: number = 5000
+  ) {
+    // Using ws://localhost:18789 by default
+  }
 
   /** Connect to Gateway */
   async connect(): Promise<void> {
@@ -68,8 +71,8 @@ export class GatewayRpcClient {
 
       this.ws.on("close", () => {
         // Reject all pending requests
-        for (const [_, { reject }] of this.pendingRequests) {
-          reject(new Error("Connection closed"));
+        for (const [_id, handlers] of this.pendingRequests) {
+          handlers.reject(new Error("Connection closed"));
         }
         this.pendingRequests.clear();
       });

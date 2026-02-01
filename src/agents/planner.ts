@@ -137,7 +137,8 @@ export class Planner {
   generateRemainingSteps(
     failedStep: Step,
     remainingGoals: string[],
-    _completedSteps: Step[]
+    // Reserved for future use: completedSteps parameter
+    // _completedSteps: Step[]
   ): Step[] {
     const newSteps: Step[] = [];
 

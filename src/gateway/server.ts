@@ -2,7 +2,7 @@
 
 import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID, timingSafeEqual, createHash } from "crypto";
-import type { SystemConfig, ClientInfo, ConnectParams, ChatMessage, TaskResponse } from "../types/index.js";
+import type { SystemConfig, ClientInfo, ConnectParams, ChatMessage } from "../types/index.js";
 import { JsonRpcServer } from "./json-rpc.js";
 import { createLogger, type Logger, type LayerLogger, runWithTraceAsync } from "../utils/logger.js";
 import { ErrorSanitizer } from "../utils/error-sanitizer.js";
@@ -12,9 +12,8 @@ import { createChannelHandlers } from "./handlers/channel.handler.js";
 import { createNodesHandlers } from "./handlers/nodes.handler.js";
 import { NodeSessionManager, NodeCommandValidator } from "../tools/nodes/index.js";
 import { saveConfig } from "../config/manager.js";
-import { DiscordAdapter } from "../channels/discord.js";
 import { TaskOrchestrator } from "../orchestrator/index.js";
-import { createGatewayTools, type Toolkit } from "../tools/index.js";
+import { createGatewayTools, type Toolkit, type ToolkitWithResources } from "../tools/index.js";
 import { SessionManager } from "../sessions/manager.js";
 import { Executor } from "../agents/executor.js";
 
@@ -235,7 +234,7 @@ export class GatewayServer {
 
     // Set up NodeExecutor RPC sender
     // NodeExecutor is stored in toolkit by createGatewayTools
-    const nodeExecutor = (this.toolkit as any).nodeExecutor;
+    const nodeExecutor = (this.toolkit as ToolkitWithResources).nodeExecutor;
     if (nodeExecutor) {
       nodeExecutor.setRpcSender(
         (nodeId: string, method: string, params: unknown, options?: { timeoutMs?: number }) =>

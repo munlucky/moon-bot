@@ -16,8 +16,8 @@ export function createToolHandlers(
   const handlers = new Map<string, JsonRpcHandler>();
 
   // tools.list: Return available tools with schemas
-  handlers.set("tools.list", async (params) => {
-    const { sessionId } = params as { sessionId?: string };
+  handlers.set("tools.list", async (_params) => {
+    // const { sessionId } = params as { sessionId?: string }; - Reserved for future use
 
     const tools = runtime.listTools();
 
@@ -29,7 +29,7 @@ export function createToolHandlers(
 
   // tools.listDefinitions: Return tool definitions for LLM context
   // Returns human-readable tool descriptions that can be shown to users
-  handlers.set("tools.listDefinitions", async (params) => {
+  handlers.set("tools.listDefinitions", async (_params) => {
     const tools = runtime.listTools();
 
     const definitions = tools.map((tool) => ({
@@ -74,7 +74,7 @@ export function createToolHandlers(
   });
 
   // tools.getPending: Get pending approval requests
-  handlers.set("tools.getPending", async (params) => {
+  handlers.set("tools.getPending", async (_params) => {
     const pending = runtime.getPendingApprovals();
 
     return {

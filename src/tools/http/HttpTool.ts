@@ -7,8 +7,6 @@ import { ToolResultBuilder } from "../runtime/ToolResultBuilder.js";
 import {
   HttpRequestInputSchema,
   HttpDownloadInputSchema,
-  HttpResponseSchema,
-  HttpDownloadResultSchema,
   toJSONSchema,
   type HttpRequestInput,
   type HttpDownloadInput,
@@ -208,7 +206,7 @@ export function createHttpDownloadTool(): ToolSpec<HttpDownloadInput, HttpDownlo
         const { PathValidator } = await import("../filesystem/PathValidator.js");
         const pathValidation = PathValidator.validate(input.destPath, ctx.workspaceRoot);
 
-        if (!pathValidation.valid) {
+        if (!pathValidation.valid || !pathValidation.resolvedPath) {
           return ToolResultBuilder.failureWithDuration(
             "INVALID_PATH",
             pathValidation.error ?? "Invalid destination path",
@@ -258,7 +256,7 @@ export function createHttpDownloadTool(): ToolSpec<HttpDownloadInput, HttpDownlo
 
         // Write to file
         const { promises: fs } = await import("fs");
-        await fs.writeFile(pathValidation.resolvedPath!, Buffer.from(buffer));
+        await fs.writeFile(pathValidation.resolvedPath, Buffer.from(buffer));
 
         return ToolResultBuilder.success(
           { success: true, path: input.destPath, size: buffer.byteLength },

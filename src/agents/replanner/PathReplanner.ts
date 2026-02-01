@@ -65,7 +65,7 @@ export class PathReplanner {
   createAlternativePlan(
     failure: ToolFailure,
     alternativeToolId: string,
-    _context: ExecutionContext
+    // _context: ExecutionContext - reserved for future use
   ): RecoveryPlan {
     this.logger.info(`Creating alternative plan using ${alternativeToolId}`);
 
@@ -87,7 +87,10 @@ export class PathReplanner {
   /**
    * Create a retry recovery plan
    */
-  createRetryPlan(failure: ToolFailure, _context: ExecutionContext): RecoveryPlan {
+  createRetryPlan(
+    failure: ToolFailure,
+    // _context: ExecutionContext - reserved for future use
+  ): RecoveryPlan {
     this.logger.info(`Creating retry plan for ${failure.toolId}`);
 
     return {

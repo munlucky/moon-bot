@@ -7,7 +7,7 @@ import { NodeSessionManager } from "./NodeSessionManager.js";
 
 describe("NodeExecutor Unit Tests", () => {
   let sessionManager: NodeSessionManager;
-  let executor: any;
+  let executor: NodeExecutor;
 
   const testUserId = "test-user-123";
   const testSocketId = "socket-test-789";

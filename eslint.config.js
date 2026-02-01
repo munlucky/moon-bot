@@ -33,14 +33,28 @@ export default [
         crypto: "readonly",
         // BigInt
         BigInt: "readonly",
+        // Web APIs (available in Node.js 18+)
+        fetch: "readonly",
+        URLSearchParams: "readonly",
+        RequestInit: "readonly",
+        AbortController: "readonly",
+        Headers: "readonly",
+        Request: "readonly",
+        Response: "readonly",
       },
     },
     plugins: {
       "@typescript-eslint": tseslint,
     },
     rules: {
+      // Disable base no-unused-vars in favor of TypeScript version
+      "no-unused-vars": "off",
       // TypeScript specific rules
-      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+      "@typescript-eslint/no-unused-vars": ["warn", {
+        argsIgnorePattern: "^_",
+        varsIgnorePattern: "^_",
+        caughtErrorsIgnorePattern: "^_",
+      }],
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/explicit-function-return-type": "off",
       "@typescript-eslint/explicit-module-boundary-types": "off",

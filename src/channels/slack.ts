@@ -143,8 +143,8 @@ export class SlackAdapter {
    * Handle app_mention events from Slack.
    */
   private async handleAppMention(
-    event: AppMentionEvent,
-    _say: (textOrBlock: string | Record<string, unknown>) => Promise<unknown>
+    event: AppMentionEvent
+    // _say: (textOrBlock: string | Record<string, unknown>) => Promise<unknown> - Reserved for future use
   ): Promise<void> {
     // Extract text (remove bot mention)
     let text = event.text;
@@ -180,8 +180,8 @@ export class SlackAdapter {
    */
   private async handleButtonInteraction(
     body: unknown,
-    ack: () => Promise<void>,
-    _respond: (response: Record<string, unknown>) => Promise<unknown>
+    ack: () => Promise<void>
+    // _respond: (response: Record<string, unknown>) => Promise<unknown> - Reserved for future use
   ): Promise<void> {
     // Acknowledge the interaction first (must be done within 3 seconds)
     await ack();
@@ -210,25 +210,12 @@ export class SlackAdapter {
           approved: parsed.action === "approve",
           userId: (action.user as Record<string, string>).id,
         });
-
-        const emoji = parsed.action === "approve" ? ":white_check_mark:" : ":x:";
-        const text = parsed.action === "approve" ? "Approved" : "Rejected";
-
-        await respond({
-          text: `${emoji} ${text}. Your response has been recorded.`,
-          replace_original: true,
-        });
+        this.logger.info(`Approval response recorded: ${parsed.action}`);
       } catch (error) {
         this.logger.error("Failed to process approval response", { error });
-        await respond({
-          text: "Failed to process your response. Please try again.",
-        });
       }
     } else {
       this.logger.warn("Gateway client not available for approval response");
-      await respond({
-        text: "Gateway not connected. Please try again later.",
-      });
     }
   }
 

@@ -91,7 +91,7 @@ describe('TaskOrchestrator', () => {
 
     it('should add task to per-channel queue', () => {
       const message = createMockMessage('test message');
-      const result = orchestrator.createTask({
+      orchestrator.createTask({
         message,
         channelSessionId: 'ch-session-1',
       });
@@ -420,7 +420,7 @@ describe('TaskOrchestrator', () => {
       });
 
       const message = createMockMessage('test message');
-      const { taskId } = orchestrator.createTask({
+      const { taskId: _taskId } = orchestrator.createTask({
         message,
         channelSessionId: 'ch-session-1',
       });
@@ -614,7 +614,7 @@ describe('TaskOrchestrator', () => {
           });
 
           // Get the task to find its channelId
-          const task = orchestrator.getTask(taskId);
+          const _task = orchestrator.getTask(taskId);
 
           // The sessionTaskMap is set during execution, so we simulate that
           // by triggering the approval request event

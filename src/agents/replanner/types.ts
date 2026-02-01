@@ -4,8 +4,10 @@ import type { Step, ToolResult } from "../../types/index.js";
 
 /**
  * Failure classification types
+ * Note: Some types reserved for future use
  */
 export enum FailureType {
+  // Reserved for future use
   NETWORK_FAILURE = "NETWORK",
   PERMISSION_DENIED = "PERMISSION",
   INVALID_INPUT = "VALIDATION",

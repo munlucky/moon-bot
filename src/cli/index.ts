@@ -3,7 +3,7 @@
  */
 
 import { Command } from "commander";
-import { loadConfig } from "../config/index.js";
+// import { loadConfig } from "../config/index.js"; // Reserved for future use
 import type { CliOptions } from "./types.js";
 
 // Gateway commands
@@ -259,7 +259,7 @@ export function createCli(): Command {
   configCmd.command("export")
     .description("Export current config to JSON file")
     .argument("<file>", "Output JSON file path")
-    .action(async (file, options) => {
+    .action(async (file, _options) => {
       const cliOptions = getCliOptions(configCmd);
       await configExport(file, cliOptions);
     });

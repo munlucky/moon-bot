@@ -8,7 +8,7 @@ import { existsSync } from "fs";
 import chalk from "chalk";
 import { loadConfig } from "../../config/index.js";
 import { GatewayRpcClient } from "../utils/rpc-client.js";
-import { printSuccess, printError, printWarning, formatOutput, printHeader, printInfo } from "../utils/output.js";
+import { printSuccess, printError, /* printWarning, formatOutput, */ printHeader, printInfo } from "../utils/output.js";
 import type { DoctorCheck, CliOptions } from "../types.js";
 
 /** Home directory */

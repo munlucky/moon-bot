@@ -11,7 +11,6 @@ import {
   FileWriteInputSchema,
   FileListInputSchema,
   FileGlobInputSchema,
-  FileEntrySchema,
   toJSONSchema,
   type FileReadInput,
   type FileWriteInput,
@@ -65,7 +64,7 @@ export function createFileReadTool(): ToolSpec<FileReadInput, { content: string;
       try {
         const validation = PathValidator.validate(input.path, ctx.workspaceRoot);
 
-        if (!validation.valid) {
+        if (!validation.valid || !validation.resolvedPath) {
           return ToolResultBuilder.failureWithDuration(
             "INVALID_PATH",
             validation.error ?? "Invalid path",
@@ -73,7 +72,7 @@ export function createFileReadTool(): ToolSpec<FileReadInput, { content: string;
           );
         }
 
-        const content = await fs.readFile(validation.resolvedPath!, {
+        const content = await fs.readFile(validation.resolvedPath, {
           encoding: input.encoding ?? "utf8",
         });
 
@@ -111,7 +110,7 @@ export function createFileWriteTool(): ToolSpec<FileWriteInput, { success: boole
       try {
         const validation = PathValidator.validate(input.path, ctx.workspaceRoot);
 
-        if (!validation.valid) {
+        if (!validation.valid || !validation.resolvedPath) {
           return ToolResultBuilder.failureWithDuration(
             "INVALID_PATH",
             validation.error ?? "Invalid path",
@@ -119,7 +118,7 @@ export function createFileWriteTool(): ToolSpec<FileWriteInput, { success: boole
           );
         }
 
-        const targetPath = validation.resolvedPath!;
+        const targetPath = validation.resolvedPath;
 
         // Check content size
         const size = Buffer.byteLength(input.content, input.encoding ?? "utf8");
@@ -166,7 +165,7 @@ export function createFileListTool(): ToolSpec<FileListInput, { entries: FileEnt
       try {
         const validation = PathValidator.validate(input.path, ctx.workspaceRoot);
 
-        if (!validation.valid) {
+        if (!validation.valid || !validation.resolvedPath) {
           return ToolResultBuilder.failureWithDuration(
             "INVALID_PATH",
             validation.error ?? "Invalid path",
@@ -174,7 +173,7 @@ export function createFileListTool(): ToolSpec<FileListInput, { entries: FileEnt
           );
         }
 
-        const targetPath = validation.resolvedPath!;
+        const targetPath = validation.resolvedPath;
 
         if (input.recursive) {
           const allPaths = await getFilesRecursively(targetPath, targetPath);

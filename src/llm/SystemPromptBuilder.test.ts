@@ -1,8 +1,7 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   SystemPromptBuilder,
   DEFAULT_SAFETY_POLICY,
-  type SystemPromptConfig,
   type ToolDefinition,
 } from "./SystemPromptBuilder.js";
 

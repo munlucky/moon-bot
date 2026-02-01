@@ -4,13 +4,13 @@
 
 import path from "path";
 import fs from "fs/promises";
-import { fileURLToPath } from "url";
+// import { fileURLToPath } from "url"; // Reserved for future use
 import { GatewayRpcClient } from "../utils/rpc-client.js";
 import { printError, printSuccess, formatOutput, printInfo, printWarning } from "../utils/output.js";
 import type { GatewayStatus, CliOptions } from "../types.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// const __filename = fileURLToPath(import.meta.url);
+// const __dirname = path.dirname(__filename); // Reserved for future use
 
 /** PID file path */
 const PID_FILE = path.join(process.env.HOME || process.env.USERPROFILE || "", ".moonbot", "gateway.pid");
@@ -83,7 +83,7 @@ export async function gatewayStatus(options: CliOptions): Promise<void> {
 }
 
 /** Gateway start command */
-export async function gatewayStart(options: CliOptions): Promise<void> {
+export async function gatewayStart(_options: CliOptions): Promise<void> {
   const pid = await getGatewayPid();
 
   if (pid && await isProcessRunning(pid)) {
@@ -136,7 +136,7 @@ export async function gatewayStart(options: CliOptions): Promise<void> {
 }
 
 /** Gateway stop command */
-export async function gatewayStop(options: CliOptions): Promise<void> {
+export async function gatewayStop(_options: CliOptions): Promise<void> {
   const pid = await getGatewayPid();
 
   if (!pid) {
