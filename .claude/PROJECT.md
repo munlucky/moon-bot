@@ -1,20 +1,21 @@
 # Moonbot Project
 
-> **Last Updated**: 2026-01-29
+> **Last Updated**: 2026-02-01
 
 ## Project Overview
 - **Name**: Moonbot
 - **Stack**: Node.js 22+, TypeScript (ESM), WebSocket, JSON-RPC
 - **Primary Language**: TypeScript
-- **Key Dependencies**: discord.js, playwright, ws, @sinclair/typebox, zod, commander, openai
+- **Key Dependencies**: discord.js, @slack/bolt, playwright, ws, @sinclair/typebox, zod, commander, openai
 
 ## Core Rules (Must Follow)
 1. **Immutability**: 객체/배열 변경 시 spread operator 사용 (mutation 금지)
 2. **Error Handling**: `userMessage`/`internalMessage` 분리, 민감 정보 노출 금지
 3. **Security**: SSRF Guard, Path Validation, Command Sanitization 필수
 4. **Testing**: 새 코드는 테스트 포함 (Vitest), 최소 80% 커버리지 목표
+5. **Type Safety**: `any` 타입 금지, 명시적 타입 사용 권장
 
-## Implementation Status (2026-01-29)
+## Implementation Status (2026-02-01)
 
 | Component | Status | Tests |
 |-----------|--------|-------|
@@ -22,13 +23,16 @@
 | TaskOrchestrator | ✅ Complete | 36 unit |
 | PerChannelQueue | ✅ Complete | 42 unit |
 | Discord Channel | ✅ Complete | - |
+| Slack Channel | ✅ Complete | - |
 | Sessions | ✅ Complete | - |
 | Auth | ✅ Complete | - |
-| Tools (4 categories) | ✅ Complete | - |
+| Tools (4 categories) | ✅ Complete | 49 unit (new) |
 | Planner | ✅ Complete (LLM) | - |
 | LLM Infrastructure | ✅ Complete | - |
 | Cron | ✅ Complete | - |
 | Discord Approval | ✅ Complete | - |
+| Slack Approval | ✅ Complete | - |
+| ESLint Config | ✅ Complete (9.x Flat) | - |
 
 ## Directory Structure
 ```
@@ -42,7 +46,9 @@
     PerChannelQueue.ts
   /channels           # Channel adapters
     discord.ts        # Discord adapter
+    slack.ts          # Slack adapter (NEW)
     GatewayClient.ts  # WebSocket client for channels
+    index.ts          # Channel exports
   /agents             # Cognitive model
     planner.ts        # Goal decomposition (LLM-powered)
     executor.ts       # Tool execution
@@ -53,7 +59,10 @@
     /filesystem       # File I/O + path validation
     /desktop          # system.run + sanitizer
     /approval         # Approval flow system
+      /handlers       # Discord, Slack approval handlers
+      ApprovalStore.test.ts  # NEW (29 tests)
     /runtime          # ToolRuntime, ApprovalManager
+      SchemaValidator.test.ts # NEW (20 tests)
   /sessions           # JSONL session storage
   /cron               # Scheduled tasks (with Agent integration)
   /auth               # Pairing, token auth
@@ -62,7 +71,7 @@
   /config             # System configuration
   /types              # TypeScript definitions
   /utils              # Logger, error-sanitizer
-  /llm                # LLM infrastructure (NEW)
+  /llm                # LLM infrastructure
     LLMClient.ts      # Planner LLM client
     LLMProviderFactory.ts  # Provider factory
     /providers        # LLM provider implementations
@@ -112,6 +121,7 @@ toolkit.register({
 - `agent_system_spec.md` - Technical Spec v2.0
 - `.claude/docs/tasks/{feature}/context.md` - Task context
 - `.claude/docs/agreements/{feature}-agreement.md` - Agreements
+- `.claude/docs/tasks/{feature}/session-logs/day-YYYY-MM-DD.md` - Session logs
 
 ## Commands
 
@@ -119,7 +129,7 @@ toolkit.register({
 ```bash
 pnpm build          # TypeScript compilation
 pnpm dev            # Watch mode (tsc --watch)
-pnpm lint           # ESLint
+pnpm lint           # ESLint 9.x Flat Config
 pnpm format         # Prettier
 ```
 
@@ -153,6 +163,8 @@ moonbot pairing approve <code>
 ## Environment
 - **Required Env Vars**:
   - `MOONBOT_DISCORD_TOKEN` - Discord bot token
+  - `MOONBOT_SLACK_TOKEN` - Slack bot token (NEW)
+  - `SLACK_SIGNING_SECRET` - Slack signing secret (NEW)
   - `MOONBOT_GATEWAY_PORT` - Gateway port (default: 18789)
   - `MOONBOT_GATEWAY_HOST` - Gateway host (default: 127.0.0.1)
 - **LLM Env Vars** (Optional):
@@ -164,14 +176,18 @@ moonbot pairing approve <code>
   - `ZAI_CODING_BASE_URL` - Z.AI coding URL (default: `https://api.z.ai/api/coding/paas/v4/`)
 - **Config Path**: `~/.moonbot/config.json`
 
-## Completed Items (2026-01-29)
+## Completed Items (2026-02-01)
 
-| Priority | Description |
-|----------|-------------|
-| P0 | LLM integration (OpenAI, GLM) |
-| P1 | Approval flow implementation |
-| P1 | Cron Agent task dispatch |
-| P2 | Discord approval handler |
+| Priority | Description | Date |
+|----------|-------------|------|
+| P0 | LLM integration (OpenAI, GLM) | 2026-01-29 |
+| P1 | Approval flow implementation | 2026-01-29 |
+| P1 | Cron Agent task dispatch | 2026-01-29 |
+| P2 | Discord approval handler | 2026-01-29 |
+| P0 | ESLint 9.x Flat Config | 2026-02-01 |
+| P1 | Slack channel adapter | 2026-02-01 |
+| P1 | Test coverage (49 tests) | 2026-02-01 |
+| P1 | Slack approval handler | 2026-02-01 |
 
 ## TODO Items (from codebase)
 
@@ -184,10 +200,11 @@ moonbot pairing approve <code>
 - Local sLLM integration for offline tasks
 - MCP support for external tools
 - Web Companion UI
-- Slack/Telegram channel adapters
+- Telegram channel adapter
 
 ## Change Log
 ```
+2026-02-01 = "Slack 채널 어댑터, 승인 핸들러, ESLint 9.x, 테스트 커버리지 49개 추가"
 2026-01-29 = "문서 현행화 - LLM 인프라 추가, P0-P2 TODO 완료 반영"
 2026-01-29 = "GLM(Z.AI) LLM provider 통합"
 2026-01-28 = "TaskOrchestrator 통합 완료, Vitest 테스트 추가"
