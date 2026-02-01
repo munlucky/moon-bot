@@ -3,7 +3,7 @@
 > 로컬 퍼스트 AI Agent System - 전체 사용자 매뉴얼
 
 **버전**: 0.1.0
-**최종 업데이트**: 2025-01-29
+**최종 업데이트**: 2026-02-01
 
 ---
 
@@ -27,11 +27,11 @@ Moonbot은 Moltbot 프레임워크 기반의 로컬 퍼스트 AI Agent System입
 
 ### 주요 기능
 
-- 🤖 **AI Agent**: Planner, Executor, Replanner로 구성된 지능형 에이전트
-- 🔌 **멀티 채널**: Discord, Slack, Telegram 지원
-- 🛡️ **로컬 퍼스트**: 모든 데이터가 로컬에 저장
-- 🔐 **보안**: DM 페어링 승인, mention gating
-- 🛠️ **도구**: 브라우저 자동화, HTTP 요청, 파일 시스템, 시스템 명령
+- **AI Agent**: Planner, Executor, Replanner로 구성된 지능형 에이전트
+- **멀티 채널**: Discord, Slack 지원 (Telegram 예정)
+- **로컬 퍼스트**: 모든 데이터가 로컬에 저장
+- **보안**: DM 페어링 승인, mention gating
+- **도구**: 브라우저 자동화, HTTP 요청, 파일 시스템, 시스템 명령, 대화형 터미널, Claude Code CLI, Node Companion 연동
 
 ---
 
@@ -333,9 +333,47 @@ moonbot channel add my-discord \
 
 ---
 
-### Slack (곧 지원 예정)
+### Slack
 
-Slack 앱 생성 및 토큰 발급 가이드는 Slack 채널 어댑터 구현 시 추가될 예정입니다.
+Slack 앱을 생성하고 Moonbot에 연결하는 방법입니다.
+
+#### 1. Slack 앱 생성
+
+1. [Slack API](https://api.slack.com/apps) 접속
+2. **Create New App** 클릭
+3. **From scratch** 선택
+4. 앱 이름 입력 (예: `Moonbot`)
+5. 워크스페이스 선택 후 **Create App**
+
+#### 2. Bot Token 발급
+
+1. 왼쪽 메뉴에서 **OAuth & Permissions** 클릭
+2. **Bot Token Scopes**에서 필요한 권한 추가:
+   - `app_mentions:read`
+   - `chat:write`
+   - `channels:history`
+   - `groups:history`
+   - `im:history`
+3. 페이지 상단의 **Install to Workspace** 클릭
+4. **Bot User OAuth Token** 복사 (`xoxb-`로 시작)
+
+#### 3. Event Subscriptions 설정
+
+1. **Event Subscriptions** 메뉴에서 **Enable Events** 활성화
+2. Request URL에 Gateway 엔드포인트 입력
+3. **Subscribe to bot events**에서 `app_mention` 추가
+
+#### 4. Moonbot에 Slack 채널 등록
+
+```bash
+moonbot channel add my-slack \
+  --type slack \
+  --token "xoxb-your-bot-token" \
+  --name "My Slack Bot" \
+  --enable
+```
+
+> **참고**: Slack 앱에 Signing Secret도 설정해야 할 수 있습니다. 환경 변수 `SLACK_SIGNING_SECRET`에 설정하세요.
 
 ---
 
@@ -354,6 +392,11 @@ Telegram Bot 생성 및 토큰 발급 가이드는 Telegram 채널 어댑터 구
 | `MOONBOT_DISCORD_TOKEN` | Discord 봇 토큰 | - |
 | `MOONBOT_GATEWAY_PORT` | Gateway 포트 | 18789 |
 | `MOONBOT_GATEWAY_HOST` | Gateway 호스트 | 127.0.0.1 |
+| `SLACK_BOT_TOKEN` | Slack 봇 토큰 | - |
+| `SLACK_SIGNING_SECRET` | Slack Signing Secret | - |
+| `SLACK_APP_TOKEN` | Slack App-Level 토큰 (Socket Mode) | - |
+| `OPENAI_API_KEY` | OpenAI API 키 | - |
+| `ZAI_API_KEY` / `GLM_API_KEY` | GLM API 키 | - |
 
 ### 우선순위
 
@@ -490,9 +533,19 @@ moonbot gateway restart
 moonbot/
 ├── src/
 │   ├── gateway/       # WebSocket 서버, JSON-RPC 핸들러
-│   ├── channels/      # 채널 어댑터 (Discord, Slack 등)
+│   ├── channels/      # 채널 어댑터 (Discord, Slack)
 │   ├── agents/        # Planner, Executor, Replanner
 │   ├── tools/         # 도구 정의 및 런타임
+│   │   ├── filesystem/   # 파일 I/O 도구
+│   │   ├── http/         # HTTP 요청 도구
+│   │   ├── browser/      # 브라우저 자동화 (Playwright)
+│   │   ├── desktop/      # 시스템 명령 도구
+│   │   ├── process/      # 대화형 터미널 세션
+│   │   ├── claude-code/  # Claude Code CLI 통합
+│   │   └── nodes/        # Node Companion 연동
+│   ├── llm/           # LLM 공급자 (OpenAI, GLM)
+│   ├── orchestrator/  # 작업 조율 및 큐 관리
+│   ├── auth/          # 인증 및 페어링
 │   ├── sessions/      # 세션 저장소
 │   ├── config/        # 설정 관리
 │   └── cli/           # CLI 명령어

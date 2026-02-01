@@ -127,51 +127,85 @@ Testing: Vitest
 src/
 ├── index.ts              # 메인 진입점 (모든 모듈 export)
 ├── cli.ts                # CLI 진입점
+├── discord-bot.ts        # Discord 봇 단독 실행
 │
 ├── gateway/              # WebSocket 서버
-│   ├── server.ts         # GatewayServer 클래스 (511줄)
+│   ├── server.ts         # GatewayServer 클래스
 │   ├── json-rpc.ts       # JSON-RPC 2.0 유틸리티
 │   └── handlers/         # RPC 메서드 핸들러
+│       ├── channel.handler.ts
+│       ├── tools.handler.ts
+│       └── nodes.handler.ts
 │
 ├── orchestrator/         # 작업 조율
-│   ├── TaskOrchestrator.ts  # 핵심 조율 로직 (730줄)
+│   ├── TaskOrchestrator.ts  # 핵심 조율 로직
 │   ├── PerChannelQueue.ts   # 채널별 FIFO 큐
-│   └── TaskRegistry.ts      # 작업 등록/추적
+│   ├── TaskRegistry.ts      # 작업 등록/추적
+│   └── types.ts             # Orchestrator 타입 정의
 │
 ├── agents/               # AI 에이전트
 │   ├── planner.ts        # LLM 기반 계획 수립
 │   ├── executor.ts       # 도구 실행 관리
+│   ├── replanner.ts      # 통합 Replanner 모듈
 │   └── replanner/        # 실패 복구 시스템
 │       ├── FailureAnalyzer.ts
 │       ├── AlternativeSelector.ts
-│       └── RecoveryLimiter.ts
+│       ├── RecoveryLimiter.ts
+│       ├── PathReplanner.ts
+│       └── types.ts
 │
 ├── llm/                  # LLM 통합
-│   ├── LLMClient.ts      # 고수준 LLM 인터페이스
-│   ├── LLMProviderFactory.ts  # 공급자 팩토리
-│   ├── OpenAIProvider.ts
-│   └── GLMProvider.ts
+│   ├── LLMClient.ts          # 고수준 LLM 인터페이스
+│   ├── LLMProviderFactory.ts # 공급자 팩토리
+│   ├── ToolCallParser.ts     # 도구 호출 파서
+│   ├── SystemPromptBuilder.ts # 시스템 프롬프트 빌더
+│   ├── types.ts              # LLM 타입 정의
+│   └── providers/
+│       ├── BaseLLMProvider.ts
+│       ├── OpenAIProvider.ts
+│       └── GLMProvider.ts
 │
 ├── tools/                # 도구 모음
 │   ├── index.ts          # Toolkit 클래스
 │   ├── runtime/          # 실행 환경
+│   │   ├── ToolRuntime.ts
+│   │   ├── ToolResultBuilder.ts
+│   │   └── ApprovalManager.ts
 │   ├── approval/         # 승인 시스템
+│   │   ├── ApprovalFlowManager.ts
+│   │   ├── ApprovalStore.ts
+│   │   └── handlers/     # 채널별 승인 핸들러
 │   ├── filesystem/       # 파일 도구
-│   ├── http/             # HTTP 도구
-│   ├── browser/          # 브라우저 도구
-│   └── desktop/          # 시스템 명령 도구
+│   ├── http/             # HTTP 도구 (+ SsrfGuard)
+│   ├── browser/          # 브라우저 도구 (Playwright)
+│   ├── desktop/          # 시스템 명령 도구
+│   ├── process/          # 대화형 터미널 세션 도구
+│   ├── claude-code/      # Claude Code CLI 통합 도구
+│   ├── nodes/            # Node Companion 연동 도구
+│   ├── policy/           # 도구 프로필 정책
+│   └── schemas/          # TypeBox 스키마
 │
 ├── channels/             # 채널 어댑터
 │   ├── discord.ts        # Discord 봇
+│   ├── slack.ts          # Slack 봇
 │   └── GatewayClient.ts  # Gateway 클라이언트
 │
 ├── cli/                  # CLI 명령어
-│   └── commands/         # gateway, logs, approvals 등
+│   ├── index.ts
+│   ├── types.ts
+│   ├── commands/         # gateway, logs, approvals, channel 등
+│   └── utils/            # 출력 유틸리티, RPC 클라이언트
+│
+├── auth/                 # 인증 시스템
+│   └── pairing.ts        # DM 페어링
+│
+├── cron/                 # 예약 작업
+│   └── manager.ts        # Cron 매니저
 │
 ├── sessions/             # 세션 관리
 ├── config/               # 설정 관리
 ├── types/                # TypeScript 타입 정의
-└── utils/                # 유틸리티
+└── utils/                # 유틸리티 (logger 등)
 ```
 
 ---
@@ -565,6 +599,9 @@ const response = await client.chatCompletion({
 | `http/` | HttpRequest, HttpDownload | X |
 | `browser/` | BrowserOpen, BrowserSearch, BrowserClose | X |
 | `desktop/` | SystemRun, SystemRunRaw | O |
+| `process/` | ProcessStart, ProcessInput, ProcessList, ProcessKill | O |
+| `claude-code/` | ClaudeCodeStart, ClaudeCodeInput, ClaudeCodeList | O |
+| `nodes/` | NodesRegister, NodesExecute, NodesList, NodesCapture | X |
 
 **도구 구조 (ToolSpec)**:
 
@@ -760,4 +797,4 @@ logger.error("에러 발생", { error: err });
 
 ---
 
-*마지막 업데이트: 2025-01*
+*마지막 업데이트: 2026-02*
