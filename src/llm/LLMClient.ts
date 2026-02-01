@@ -6,6 +6,14 @@ import { createLogger, type Logger } from "../utils/logger.js";
 import { LLMProviderFactory } from "./LLMProviderFactory.js";
 import type { ILLMProvider } from "./types.js";
 import { ToolCallParser, TOOL_ALIASES } from "./ToolCallParser.js";
+import {
+  SystemPromptBuilder,
+  type SystemPromptConfig,
+  type WorkspaceConfig,
+  type RuntimeInfo,
+  type UserInfo,
+  type SafetyPolicy,
+} from "./SystemPromptBuilder.js";
 
 export interface LLMPlanRequest {
   message: string;
@@ -14,6 +22,16 @@ export interface LLMPlanRequest {
   /** Tool definitions with schema for accurate parameter generation */
   toolDefinitions?: ToolDefinition[];
   sessionContext?: string;
+  /** Workspace configuration for the agent */
+  workspace?: WorkspaceConfig;
+  /** Runtime information */
+  runtime?: RuntimeInfo;
+  /** User information */
+  userInfo?: UserInfo;
+  /** Custom safety policy (uses default if not provided) */
+  safetyPolicy?: SafetyPolicy;
+  /** Whether to use the new structured prompt builder (default: true) */
+  useStructuredPrompt?: boolean;
 }
 
 export interface LLMResponseRequest {
@@ -22,6 +40,10 @@ export interface LLMResponseRequest {
   toolContext?: string;
   /** Tool definitions for response generation */
   toolDefinitions?: ToolDefinition[];
+  /** Runtime information */
+  runtime?: RuntimeInfo;
+  /** Whether to use the new structured prompt builder (default: true) */
+  useStructuredPrompt?: boolean;
 }
 
 export interface LLMPlanResponse {
@@ -69,6 +91,7 @@ export class LLMClient {
     }
 
     const systemPrompt = this.buildSystemPrompt(
+      request,
       request.toolDefinitions,
       request.availableTools
     );
@@ -102,7 +125,7 @@ export class LLMClient {
       throw new Error("LLM client not available (API key not configured)");
     }
 
-    const systemPrompt = this.buildResponseSystemPrompt(request.toolDefinitions);
+    const systemPrompt = this.buildResponseSystemPrompt(request, request.toolDefinitions);
     const userPrompt = this.buildResponseUserPrompt(request);
 
     try {
@@ -124,23 +147,52 @@ export class LLMClient {
   }
 
   /**
-   * Build system prompt with available tools
-   * @param toolDefinitions Full tool definitions with schema (preferred)
-   * @param availableTools Legacy tool ID list (fallback)
+   * Build system prompt with available tools using SystemPromptBuilder.
+   * @param request The plan request containing tools and optional config
+   * @param legacyToolDefinitions Legacy tool definitions (fallback)
+   * @param legacyAvailableTools Legacy tool ID list (fallback)
    */
   private buildSystemPrompt(
+    request?: Partial<LLMPlanRequest>,
+    legacyToolDefinitions?: ToolDefinition[],
+    legacyAvailableTools?: string[]
+  ): string {
+    const toolDefinitions = request?.toolDefinitions ?? legacyToolDefinitions;
+    const useStructuredPrompt = request?.useStructuredPrompt ?? true;
+
+    // Use new structured prompt builder
+    if (useStructuredPrompt && toolDefinitions) {
+      const builder = SystemPromptBuilder.createFull({
+        tools: toolDefinitions,
+        workspace: request?.workspace,
+        runtime: request?.runtime,
+        userInfo: request?.userInfo,
+        safety: request?.safetyPolicy,
+        includeToolCallStyle: true,
+        includeCLIReference: false,
+      });
+      return builder.build();
+    }
+
+    // Fallback to legacy prompt for backwards compatibility
+    return this.buildLegacySystemPrompt(toolDefinitions, legacyAvailableTools);
+  }
+
+  /**
+   * Legacy system prompt builder for backwards compatibility.
+   * @deprecated Use SystemPromptBuilder instead
+   */
+  private buildLegacySystemPrompt(
     toolDefinitions?: ToolDefinition[],
     availableTools?: string[]
   ): string {
     let toolSection: string;
 
     if (toolDefinitions && toolDefinitions.length > 0) {
-      // Use full tool definitions with schema
       toolSection = toolDefinitions
         .map((tool) => this.formatToolDefinition(tool))
         .join("\n\n");
     } else if (availableTools && availableTools.length > 0) {
-      // Fallback to simple tool ID list
       toolSection = availableTools.map((t) => `- \`${t}\``).join("\n");
     } else {
       toolSection = "(No tools available)";
@@ -236,13 +288,37 @@ Respond ONLY with valid JSON in this format:
   }
 
   /**
-   * Build system prompt for direct response
-   * @param toolDefinitions Optional tool definitions to include in the prompt
+   * Build system prompt for direct response using SystemPromptBuilder.
+   * @param request The response request containing tools and optional config
+   * @param legacyToolDefinitions Legacy tool definitions (fallback)
    */
-  private buildResponseSystemPrompt(toolDefinitions?: ToolDefinition[]): string {
+  private buildResponseSystemPrompt(
+    request?: Partial<LLMResponseRequest>,
+    legacyToolDefinitions?: ToolDefinition[]
+  ): string {
+    const toolDefinitions = request?.toolDefinitions ?? legacyToolDefinitions;
+    const useStructuredPrompt = request?.useStructuredPrompt ?? true;
+
+    // Use new structured prompt builder
+    if (useStructuredPrompt && toolDefinitions) {
+      const builder = SystemPromptBuilder.createFull({
+        tools: toolDefinitions,
+        runtime: request?.runtime,
+      });
+      return builder.buildForResponse();
+    }
+
+    // Fallback to legacy prompt
+    return this.buildLegacyResponseSystemPrompt(toolDefinitions);
+  }
+
+  /**
+   * Legacy response system prompt builder for backwards compatibility.
+   * @deprecated Use SystemPromptBuilder.buildForResponse() instead
+   */
+  private buildLegacyResponseSystemPrompt(toolDefinitions?: ToolDefinition[]): string {
     let prompt = "You are Moon-Bot, a helpful assistant. Respond to the user's request clearly and concisely.";
 
-    // Add available tools section if tool definitions are provided
     if (toolDefinitions && toolDefinitions.length > 0) {
       const toolSection = toolDefinitions
         .map((tool) => this.formatToolDefinition(tool))
