@@ -5,7 +5,7 @@
  * Covers path validation, size limits, and error handling.
  */
 
-import { describe, it, expect, beforeEach, beforeAll, afterEach, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type { ToolContext } from "../../types/index.js";
 
 // Mock fs/promises and PathValidator BEFORE importing FileIOTool
@@ -302,122 +302,68 @@ describe("FileIOTool", () => {
 
   describe("createFileGlobTool", () => {
     const globTool = createFileGlobTool();
-    const tempDir = "./test-temp-glob";
 
-    beforeAll(async () => {
-      // Create temp directory structure for real filesystem tests
-      const fs = await import("fs/promises");
-      try {
-        await fs.mkdir(tempDir, { recursive: true });
-        await fs.writeFile(`${tempDir}/test.txt`, "content1");
-        await fs.writeFile(`${tempDir}/test.js`, "content2");
-        await fs.writeFile(`${tempDir}/other.txt`, "content3");
-        await fs.mkdir(`${tempDir}/src`);
-        await fs.writeFile(`${tempDir}/src/file.ts`, "content4");
-      } catch (e) {
-        // Ignore if already exists
-      }
-    });
-
-    afterAll(async () => {
-      // Clean up temp directory
-      const fs = await import("fs/promises");
-      try {
-        await fs.rm(tempDir, { recursive: true, force: true });
-      } catch (e) {
-        // Ignore cleanup errors
-      }
+    // Helper to create mock directory entries
+    const createMockDirent = (name: string, isDir: boolean) => ({
+      name,
+      isFile: () => !isDir,
+      isDirectory: () => isDir,
     });
 
     it("T17: should match files with glob pattern at workspace root", async () => {
-      const realContext: ToolContext = {
-        workspaceRoot: tempDir,
-        policy: { maxBytes: 1024 * 1024, timeoutMs: 5000 },
-        userId: "test-user",
-        sessionId: "test-session",
-      };
-
-      // For integration tests, use actual fs module
-      // We need to call the actual fs.readdir to read real files
-      const actualFs = await vi.importActual<typeof import("fs/promises")>("fs/promises");
-
-      // Mock readdir to use actual fs for tempDir
+      // Mock virtual file system structure
       mockReaddir.mockImplementation(async (dirPath: string) => {
-        // For the temp directory, use real fs
-        if (dirPath.includes("test-temp-glob")) {
-          return actualFs.readdir(dirPath, { withFileTypes: true });
+        if (dirPath === "/workspace" || dirPath === "/workspace/.") {
+          return [
+            createMockDirent("test.txt", false),
+            createMockDirent("test.js", false),
+            createMockDirent("other.txt", false),
+            createMockDirent("src", true),
+          ] as any;
         }
-        // For other paths, return empty
+        if (dirPath === "/workspace/src") {
+          return [createMockDirent("file.ts", false)] as any;
+        }
         return [];
       });
 
-      // Mock stat to use actual fs for tempDir
-      mockStat.mockImplementation(async (filePath: string) => {
-        if (filePath.includes("test-temp-glob")) {
-          return actualFs.stat(filePath);
-        }
-        return { size: 100 } as any;
-      });
+      mockStat.mockResolvedValue({ size: 100 } as any);
 
-      // Verify files exist
-      const fs = await import("fs/promises");
-      const path = await import("path");
-      const files = await fs.readdir(tempDir);
-      expect(files).toContain("test.txt");
-      expect(files).toContain("other.txt");
-
-      // Run glob - should match .txt files
-      const result = await globTool.run({ pattern: "*.txt" }, realContext);
+      const result = await globTool.run({ pattern: "*.txt" }, mockContext);
 
       expect(result.ok).toBe(true);
       expect(result.data?.paths).toBeDefined();
-      // Should find test.txt and other.txt
       expect(result.data?.paths.length).toBeGreaterThanOrEqual(2);
       expect(result.data?.paths).toContain("test.txt");
       expect(result.data?.paths).toContain("other.txt");
     });
 
     it("T18: should match files in subdirectories", async () => {
-      const realContext: ToolContext = {
-        workspaceRoot: tempDir,
-        policy: { maxBytes: 1024 * 1024, timeoutMs: 5000 },
-        userId: "test-user",
-        sessionId: "test-session",
-      };
-
-      // For integration tests, use actual fs module
-      const actualFs = await vi.importActual<typeof import("fs/promises")>("fs/promises");
-      const path = await import("path");
-
-      // Mock readdir to use actual fs for tempDir
+      // Mock virtual file system with subdirectory
       mockReaddir.mockImplementation(async (dirPath: string) => {
-        if (dirPath.includes("test-temp-glob")) {
-          return actualFs.readdir(dirPath, { withFileTypes: true });
+        if (dirPath === "/workspace" || dirPath === "/workspace/.") {
+          return [
+            createMockDirent("test.txt", false),
+            createMockDirent("src", true),
+          ] as any;
+        }
+        if (dirPath === "/workspace/src") {
+          return [createMockDirent("file.ts", false)] as any;
         }
         return [];
       });
 
-      // Mock stat to use actual fs for tempDir
-      mockStat.mockImplementation(async (filePath: string) => {
-        if (filePath.includes("test-temp-glob")) {
-          return actualFs.stat(filePath);
-        }
-        return { size: 100 } as any;
-      });
+      mockStat.mockResolvedValue({ size: 100 } as any);
 
-      // Verify file exists
-      const fs = await import("fs/promises");
-      const srcFiles = await fs.readdir(`${tempDir}/src`);
-      expect(srcFiles).toContain("file.ts");
-
-      // Run glob with directory prefix
-      const result = await globTool.run({ pattern: "src/file.ts" }, realContext);
+      const result = await globTool.run({ pattern: "src/file.ts" }, mockContext);
 
       expect(result.ok).toBe(true);
       expect(result.data?.paths).toBeDefined();
-      // paths use platform-specific separator from path.relative()
-      const expectedPath = path.join("src", "file.ts");
-      expect(result.data?.paths).toContain(expectedPath);
+      // Check for the file in paths (platform-independent)
+      const hasFile = result.data?.paths.some(
+        (p: string) => p === "src/file.ts" || p === "src\\file.ts"
+      );
+      expect(hasFile).toBe(true);
     });
 
     it("T19: should return empty array when no matches", async () => {

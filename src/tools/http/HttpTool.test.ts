@@ -341,10 +341,6 @@ describe("HttpTool", () => {
         mockContext
       );
 
-      console.log("T16 result:", result);
-      if (!result.ok) {
-        console.log("T16 error:", result.error);
-      }
       expect(result.ok).toBe(true);
       expect(result.data).toEqual({
         success: true,
