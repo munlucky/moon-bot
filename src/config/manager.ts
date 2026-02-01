@@ -103,8 +103,8 @@ async function cleanOldBackups(): Promise<void> {
     for (const file of toDelete) {
       await fs.unlink(file.path);
     }
-  } catch {
-    // Ignore cleanup errors
+  } catch (err) {
+    console.debug("[ConfigManager] Backup cleanup error:", (err as Error)?.message ?? err);
   }
 }
 

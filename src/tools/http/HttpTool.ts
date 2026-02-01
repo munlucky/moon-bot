@@ -99,8 +99,8 @@ export function createHttpRequestTool(): ToolSpec<HttpRequestInput, HttpResponse
           }
         }
 
-        // SSRF check
-        const ssrfCheck = SsrfGuard.checkUrl(input.url);
+        // SSRF check with DNS resolution (prevents DNS rebinding attacks)
+        const ssrfCheck = await SsrfGuard.resolveAndCheck(input.url);
         if (!ssrfCheck.allowed) {
           return ToolResultBuilder.failureWithDuration(
             "BLOCKED_URL",
@@ -120,10 +120,19 @@ export function createHttpRequestTool(): ToolSpec<HttpRequestInput, HttpResponse
           url = `${url}${separator}${searchParams.toString()}`;
         }
 
+        // Apply DNS rebinding protection if we have a resolved IP
+        let fetchUrl = url;
+        let hostHeader: Record<string, string> = {};
+        if (ssrfCheck.resolvedIp) {
+          const safeFetch = SsrfGuard.createSafeFetchUrl(url, ssrfCheck.resolvedIp);
+          fetchUrl = safeFetch.url;
+          hostHeader = safeFetch.headers;
+        }
+
         // Prepare fetch options
         const options: RequestInit = {
           method: input.method,
-          headers: input.headers,
+          headers: { ...hostHeader, ...input.headers },
           body: input.body,
         };
 
@@ -133,8 +142,8 @@ export function createHttpRequestTool(): ToolSpec<HttpRequestInput, HttpResponse
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         options.signal = controller.signal;
 
-        // Make request
-        const response = await fetch(url, options);
+        // Make request using resolved IP
+        const response = await fetch(fetchUrl, options);
         clearTimeout(timeoutId);
 
         // Get headers
@@ -192,8 +201,8 @@ export function createHttpDownloadTool(): ToolSpec<HttpDownloadInput, HttpDownlo
       const startTime = Date.now();
 
       try {
-        // SSRF check
-        const ssrfCheck = SsrfGuard.checkUrl(input.url);
+        // SSRF check with DNS resolution (prevents DNS rebinding attacks)
+        const ssrfCheck = await SsrfGuard.resolveAndCheck(input.url);
         if (!ssrfCheck.allowed) {
           return ToolResultBuilder.failureWithDuration(
             "BLOCKED_URL",
@@ -214,13 +223,23 @@ export function createHttpDownloadTool(): ToolSpec<HttpDownloadInput, HttpDownlo
           );
         }
 
+        // Apply DNS rebinding protection if we have a resolved IP
+        let fetchUrl = input.url;
+        let fetchHeaders: Record<string, string> = {};
+        if (ssrfCheck.resolvedIp) {
+          const safeFetch = SsrfGuard.createSafeFetchUrl(input.url, ssrfCheck.resolvedIp);
+          fetchUrl = safeFetch.url;
+          fetchHeaders = safeFetch.headers;
+        }
+
         // Set timeout
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), ctx.policy.timeoutMs);
 
-        // Download with size limit
-        const response = await fetch(input.url, {
+        // Download with size limit using resolved IP
+        const response = await fetch(fetchUrl, {
           signal: controller.signal,
+          headers: fetchHeaders,
         });
         clearTimeout(timeoutId);
 
