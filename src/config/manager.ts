@@ -15,8 +15,8 @@ const BACKUP_DIR = path.join(homedir(), ".moonbot", "backups");
  * Mask token for display (show first 6 and last 4 chars)
  */
 export function maskToken(token?: string): string {
-  if (!token) return "[none]";
-  if (token.length <= 10) return "***";
+  if (!token) {return "[none]";}
+  if (token.length <= 10) {return "***";}
   return `${token.slice(0, 6)}...${token.slice(-4)}`;
 }
 
@@ -59,7 +59,7 @@ export async function saveConfig(config: SystemConfig, configPath?: string): Pro
 async function createBackup(configPath: string): Promise<void> {
   try {
     const exists = await fs.access(configPath).then(() => true).catch(() => false);
-    if (!exists) return;
+    if (!exists) {return;}
 
     // Ensure backup directory exists
     await fs.mkdir(BACKUP_DIR, { recursive: true });

@@ -7,7 +7,7 @@ import type {
   ToolFailure,
 } from "./types.js";
 import { RecoveryAction } from "./types.js";
-import { createLogger, type Logger } from "../../utils/logger.js";
+import { type Logger } from "../../utils/logger.js";
 import { randomUUID } from "node:crypto";
 
 export class PathReplanner {
@@ -65,7 +65,7 @@ export class PathReplanner {
   createAlternativePlan(
     failure: ToolFailure,
     alternativeToolId: string,
-    context: ExecutionContext
+    _context: ExecutionContext
   ): RecoveryPlan {
     this.logger.info(`Creating alternative plan using ${alternativeToolId}`);
 
@@ -87,7 +87,7 @@ export class PathReplanner {
   /**
    * Create a retry recovery plan
    */
-  createRetryPlan(failure: ToolFailure, context: ExecutionContext): RecoveryPlan {
+  createRetryPlan(failure: ToolFailure, _context: ExecutionContext): RecoveryPlan {
     this.logger.info(`Creating retry plan for ${failure.toolId}`);
 
     return {

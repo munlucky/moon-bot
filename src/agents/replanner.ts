@@ -1,7 +1,6 @@
 // Replanner - Main failure recovery and path replanning system
 
 import type { ToolSpec } from "../types/index.js";
-import type { Step } from "../types/index.js";
 import {
   FailureType,
   RecoveryAction,
@@ -14,7 +13,7 @@ import { FailureAnalyzer } from "./replanner/FailureAnalyzer.js";
 import { AlternativeSelector } from "./replanner/AlternativeSelector.js";
 import { PathReplanner } from "./replanner/PathReplanner.js";
 import { RecoveryLimiter } from "./replanner/RecoveryLimiter.js";
-import { createLogger, type Logger } from "../utils/logger.js";
+import { type Logger } from "../utils/logger.js";
 
 export interface ReplannerConfig {
   recoveryLimits?: Partial<RecoveryLimitsConfig>;

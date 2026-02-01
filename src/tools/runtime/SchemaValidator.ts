@@ -45,7 +45,9 @@ export class SchemaValidator {
         return z.boolean();
       case "array":
         return z.array(
-          SchemaValidator.fromJsonSchema(schema.items as Record<string, unknown>)
+          schema.items
+            ? SchemaValidator.fromJsonSchema(schema.items as Record<string, unknown>)
+            : z.unknown()
         );
       case "object": {
         const properties = schema.properties as Record<string, unknown> | undefined;

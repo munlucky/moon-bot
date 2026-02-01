@@ -19,6 +19,18 @@ export default [
         Buffer: "readonly",
         __dirname: "readonly",
         __filename: "readonly",
+        global: "readonly",
+        // Node.js types
+        NodeJS: "readonly",
+        // Timers
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        setInterval: "readonly",
+        clearInterval: "readonly",
+        setImmediate: "readonly",
+        clearImmediate: "readonly",
+        // Crypto
+        crypto: "readonly",
         // BigInt
         BigInt: "readonly",
       },
@@ -62,6 +74,11 @@ export default [
     },
   },
   {
-    ignores: ["dist/**", "node_modules/**", "*.config.js"],
+    ignores: [
+      "dist/**",
+      "node_modules/**",
+      "*.config.js",
+      ".claude/**",  // Ignore .claude folder (docs, scripts, etc.)
+    ],
   },
 ];

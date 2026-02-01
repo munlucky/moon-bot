@@ -6,9 +6,7 @@ import type { ToolResult } from "../../types/index.js";
 import type { ToolInvocation } from "../runtime/ToolRuntime.js";
 import type {
   ApprovalRequest,
-  ApprovalResponse,
   ApprovalHandler,
-  ApprovalFlowEvents,
 } from "./types.js";
 import { ApprovalStore } from "./ApprovalStore.js";
 import { createLogger, type Logger } from "../../utils/logger.js";

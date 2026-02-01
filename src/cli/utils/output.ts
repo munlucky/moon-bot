@@ -33,7 +33,7 @@ export function formatAsTable(data: unknown): string {
 
   // Handle arrays
   if (Array.isArray(obj)) {
-    if (obj.length === 0) return "No data";
+    if (obj.length === 0) {return "No data";}
 
     const keys = Object.keys(obj[0] as Record<string, unknown>);
     const table = new Table({
@@ -62,13 +62,13 @@ export function formatAsTable(data: unknown): string {
 
 /** Format a value for display */
 function formatValue(value: unknown): string {
-  if (value === null) return chalk.gray("null");
-  if (value === undefined) return chalk.gray("undefined");
-  if (typeof value === "boolean") return value ? chalk.green("true") : chalk.red("false");
-  if (typeof value === "number") return String(value);
-  if (typeof value === "string") return value;
-  if (value instanceof Date) return value.toISOString();
-  if (Array.isArray(value)) return `[${value.length} items]`;
+  if (value === null) {return chalk.gray("null");}
+  if (value === undefined) {return chalk.gray("undefined");}
+  if (typeof value === "boolean") {return value ? chalk.green("true") : chalk.red("false");}
+  if (typeof value === "number") {return String(value);}
+  if (typeof value === "string") {return value;}
+  if (value instanceof Date) {return value.toISOString();}
+  if (Array.isArray(value)) {return `[${value.length} items]`;}
   return JSON.stringify(value);
 }
 

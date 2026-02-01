@@ -126,7 +126,7 @@ export interface ToolSpec<TInput = unknown, TOutput = unknown> {
   description: string;
   schema: object;
   requiresApproval?: boolean;
-  run: (input: TInput, ctx: ToolContext) => Promise<ToolResult<TOutput>>;
+  run: (_input: TInput, _ctx: ToolContext) => Promise<ToolResult<TOutput>>;
 }
 
 /**

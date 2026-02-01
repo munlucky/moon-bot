@@ -6,7 +6,7 @@ import type {
   ToolFailure,
 } from "./types.js";
 import { RecoveryAction } from "./types.js";
-import { createLogger, type Logger } from "../../utils/logger.js";
+import { type Logger } from "../../utils/logger.js";
 import { randomUUID } from "node:crypto";
 
 const DEFAULT_CONFIG: RecoveryLimitsConfig = {
@@ -39,7 +39,7 @@ export class RecoveryLimiter {
   /**
    * Check if recovery is possible for a failure
    */
-  canRecover(failure: ToolFailure): boolean {
+  canRecover(_failure: ToolFailure): boolean {
     // Check global timeout
     const elapsed = Date.now() - this.globalStartTime;
     if (elapsed > this.config.globalTimeout) {

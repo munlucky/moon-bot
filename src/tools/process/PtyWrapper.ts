@@ -244,7 +244,7 @@ function spawnWithChildProcess(
  * Convert signal name to number for PTY
  */
 function signalToNumber(signal?: NodeJS.Signals): number {
-  if (!signal) return 15; // SIGTERM
+  if (!signal) {return 15;} // SIGTERM
   const signals: Record<string, number> = {
     SIGTERM: 15,
     SIGKILL: 9,
@@ -259,6 +259,6 @@ function signalToNumber(signal?: NodeJS.Signals): number {
  * Convert signal name string to number
  */
 function signalNameToNumber(signal: NodeJS.Signals | null): number | null {
-  if (!signal) return null;
+  if (!signal) {return null;}
   return signalToNumber(signal);
 }

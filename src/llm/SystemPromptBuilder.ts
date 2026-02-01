@@ -470,9 +470,9 @@ Respond ONLY with valid JSON:
 
     const parts = [`Agent: ${agentId}`, `Model: ${model}`];
 
-    if (channelId) parts.push(`Channel: ${channelId}`);
-    if (host) parts.push(`Host: ${host}`);
-    if (os) parts.push(`OS: ${os}`);
+    if (channelId) {parts.push(`Channel: ${channelId}`);}
+    if (host) {parts.push(`Host: ${host}`);}
+    if (os) {parts.push(`OS: ${os}`);}
 
     const now = new Date().toISOString();
     parts.push(`Time: ${now}`);

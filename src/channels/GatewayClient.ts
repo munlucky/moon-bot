@@ -44,11 +44,11 @@ export interface ChannelGatewayClientOptions {
 }
 
 export interface ChannelGatewayClientEvents {
-  notification: (method: string, params: unknown) => void;
+  notification: (_method: string, _params: unknown) => void;
   connected: () => void;
   disconnected: () => void;
-  error: (error: Error) => void;
-  reconnecting: (attempt: number) => void;
+  error: (_error: Error) => void;
+  reconnecting: (_attempt: number) => void;
 }
 
 export class ChannelGatewayClient extends EventEmitter {
@@ -112,14 +112,14 @@ export class ChannelGatewayClient extends EventEmitter {
             });
             this.emit("connected");
             resolve();
-          } catch (error) {
+          } catch (_error) {
             this._isConnected = false;
-            reject(error);
+            reject(_error);
           }
         });
 
-        this.ws.on("message", (data: Buffer) => {
-          this.handleMessage(data);
+        this.ws.on("message", (_data: Buffer) => {
+          this.handleMessage(_data);
         });
 
         this.ws.on("close", () => {
@@ -132,14 +132,14 @@ export class ChannelGatewayClient extends EventEmitter {
           }
         });
 
-        this.ws.on("error", (error) => {
-          this.emit("error", error);
+        this.ws.on("error", (_error) => {
+          this.emit("error", _error);
           if (!this._isConnected) {
-            reject(new Error(`Failed to connect to Gateway: ${error.message}`));
+            reject(new Error(`Failed to connect to Gateway: ${_error.message}`));
           }
         });
-      } catch (error) {
-        reject(error);
+      } catch (_error) {
+        reject(_error);
       }
     });
   }

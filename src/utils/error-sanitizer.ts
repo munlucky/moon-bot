@@ -22,8 +22,8 @@ export interface SanitizedError {
  */
 export class ErrorSanitizer {
   private static readonly SENSITIVE_PATTERNS = [
-    /\/[a-zA-Z0-9_\-\/\.]+\//g, // Unix paths: /home/user/project/
-    /[a-zA-Z]:\\[a-zA-Z0-9_\-\\\.]+\\/g, // Windows paths: C:\Users\project\
+    /\/[a-zA-Z0-9_\-/.]+\//g, // Unix paths: /home/user/project/
+    /[a-zA-Z]:\\[a-zA-Z0-9_\-\\.]+\\/g, // Windows paths: C:\Users\project\
     /at .*\(.*:\d+:\d+\)/g, // Stack traces: at functionName (file.js:10:5)
     /\b[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b/gi, // UUIDs
   ];

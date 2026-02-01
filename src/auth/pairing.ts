@@ -1,6 +1,6 @@
 // Authentication and Pairing
 
-import { randomUUID, createHash, randomBytes } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import { createLogger, type Logger } from "../utils/logger.js";
 import type { SystemConfig } from "../types/index.js";
 

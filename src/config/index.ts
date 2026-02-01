@@ -191,7 +191,7 @@ function mergeWithDefaults(config: Partial<SystemConfig>): SystemConfig {
 
 export function ensureStorageDirectories(config: SystemConfig): void {
   const storage = config.storage;
-  if (!storage) return;
+  if (!storage) {return;}
 
   if (!fs.existsSync(storage.sessionsPath)) {
     fs.mkdirSync(storage.sessionsPath, { recursive: true });
@@ -204,6 +204,6 @@ export function ensureStorageDirectories(config: SystemConfig): void {
 
 export function getConfigPath(): string {
   const envPath = process.env.MOONBOT_CONFIG;
-  if (envPath) return envPath;
+  if (envPath) {return envPath;}
   return DEFAULT_CONFIG_PATH;
 }

@@ -1,8 +1,7 @@
 // FailureAnalyzer - Classifies tool failures for recovery strategy
 
-import type { ToolResult } from "../../types/index.js";
 import { FailureType, type ToolFailure } from "./types.js";
-import { createLogger, type Logger } from "../../utils/logger.js";
+import { type Logger } from "../../utils/logger.js";
 
 export class FailureAnalyzer {
   private logger: Logger;

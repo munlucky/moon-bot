@@ -206,9 +206,14 @@ export class Logger {
  */
 export class LayerLogger {
   constructor(
-    private parent: Logger,
-    private layer: ServiceLayer
-  ) {}
+    parent: Logger,
+    layer: ServiceLayer
+  ) {
+    this.parent = parent;
+    this.layer = layer;
+  }
+  private parent: Logger;
+  private layer: ServiceLayer;
 
   debug(message: string, context?: Record<string, unknown>): void {
     this.parent.debug(message, context, this.layer);
@@ -316,8 +321,8 @@ function sanitizeForLog(data: unknown, maxDepth = 3, currentDepth = 0): unknown 
 export function withLogging<TArgs extends unknown[], TResult>(
   logger: LayerLogger,
   operationName: string,
-  fn: (...args: TArgs) => Promise<TResult>
-): (...args: TArgs) => Promise<TResult> {
+  fn: (..._args: TArgs) => Promise<TResult>
+): (..._args: TArgs) => Promise<TResult> {
   return async (...args: TArgs): Promise<TResult> => {
     const startTime = Date.now();
     logger.logInput(operationName, args.length === 1 ? args[0] : args);
@@ -341,9 +346,9 @@ export function withMethodLogging<T, TArgs extends unknown[], TResult>(
   instance: T,
   logger: LayerLogger,
   methodName: string,
-  method: (...args: TArgs) => Promise<TResult>
-): (...args: TArgs) => Promise<TResult> {
-  return withLogging(logger, methodName, method.bind(instance) as (...args: TArgs) => Promise<TResult>);
+  method: (..._args: TArgs) => Promise<TResult>
+): (..._args: TArgs) => Promise<TResult> {
+  return withLogging(logger, methodName, method.bind(instance) as (..._args: TArgs) => Promise<TResult>);
 }
 
 export function createLogger(config?: SystemConfig, defaultLayer?: ServiceLayer): Logger {

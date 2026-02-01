@@ -194,7 +194,7 @@ export class ToolRuntime extends EventEmitter {
       if (tool.requiresApproval && this.config.enableApprovals) {
         await this.approvalManager.loadConfig();
 
-        const { approvalRequired, approvalData } = await this.checkToolApproval(
+        const { approvalRequired } = await this.checkToolApproval(
           toolId,
           input,
           validationResult.data as Record<string, unknown>

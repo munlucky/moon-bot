@@ -1,7 +1,7 @@
 // Executor: Executes steps using tools with Replanner integration
 
 import { createLogger, type Logger, type LayerLogger, runWithTraceAsync, getTraceContext } from "../utils/logger.js";
-import type { SystemConfig, ToolContext, SessionMessage, ToolResult, ToolSpec, ToolDefinition } from "../types/index.js";
+import type { SystemConfig, ToolContext, SessionMessage } from "../types/index.js";
 import { Planner, type Step } from "./planner.js";
 import { Replanner, type ToolFailure, type ExecutionContext } from "./replanner.js";
 import type { Toolkit } from "../tools/index.js";

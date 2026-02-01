@@ -8,9 +8,7 @@ import { GatewayRpcClient } from "../utils/rpc-client.js";
 import {
   printError,
   printSuccess,
-  formatOutput,
   printInfo,
-  printWarning
 } from "../utils/output.js";
 import type { ChannelConfig } from "../../types/index.js";
 import { maskToken } from "../../config/manager.js";
@@ -133,7 +131,7 @@ export async function channelAdd(
 /**
  * Remove a channel
  */
-export async function channelRemove(id: string, options: CliOptions): Promise<void> {
+export async function channelRemove(id: string, _options: CliOptions): Promise<void> {
   if (!id) {
     printError("Channel ID is required");
     console.log("\nUsage: moonbot channel remove <id>");
@@ -144,7 +142,7 @@ export async function channelRemove(id: string, options: CliOptions): Promise<vo
     const client = new GatewayRpcClient();
     await client.connect();
 
-    const result = await client.call<{ success: boolean; channel: ChannelConfig }>("channel.remove", [{ channelId: id }]);
+    await client.call<{ success: boolean; channel: ChannelConfig }>("channel.remove", [{ channelId: id }]);
     client.close();
 
     printSuccess(`Channel "${id}" removed successfully`);
@@ -168,7 +166,7 @@ export async function channelRemove(id: string, options: CliOptions): Promise<vo
 /**
  * Enable a channel
  */
-export async function channelEnable(id: string, options: CliOptions): Promise<void> {
+export async function channelEnable(id: string, _options: CliOptions): Promise<void> {
   if (!id) {
     printError("Channel ID is required");
     console.log("\nUsage: moonbot channel enable <id>");
@@ -179,7 +177,7 @@ export async function channelEnable(id: string, options: CliOptions): Promise<vo
     const client = new GatewayRpcClient();
     await client.connect();
 
-    const result = await client.call<{ success: boolean; channel: ChannelConfig }>("channel.enable", [{ channelId: id }]);
+    await client.call<{ success: boolean; channel: ChannelConfig }>("channel.enable", [{ channelId: id }]);
     client.close();
 
     printSuccess(`Channel "${id}" enabled`);
@@ -203,7 +201,7 @@ export async function channelEnable(id: string, options: CliOptions): Promise<vo
 /**
  * Disable a channel
  */
-export async function channelDisable(id: string, options: CliOptions): Promise<void> {
+export async function channelDisable(id: string, _options: CliOptions): Promise<void> {
   if (!id) {
     printError("Channel ID is required");
     console.log("\nUsage: moonbot channel disable <id>");
@@ -214,7 +212,7 @@ export async function channelDisable(id: string, options: CliOptions): Promise<v
     const client = new GatewayRpcClient();
     await client.connect();
 
-    const result = await client.call<{ success: boolean; channel: ChannelConfig }>("channel.disable", [{ channelId: id }]);
+    await client.call<{ success: boolean; channel: ChannelConfig }>("channel.disable", [{ channelId: id }]);
     client.close();
 
     printSuccess(`Channel "${id}" disabled`);

@@ -8,25 +8,37 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ApprovalStore } from './ApprovalStore.js';
 import type { ApprovalRequest } from './types.js';
-import * as fs from 'fs/promises';
 
-// Mock fs module
-vi.mock('fs/promises', () => ({
-  mkdir: vi.fn(),
-  writeFile: vi.fn(),
-  readFile: vi.fn(),
+// Mock fs/promises module
+const { mockMkdir, mockWriteFile, mockReadFile } = vi.hoisted(() => ({
+  mockMkdir: vi.fn(),
+  mockWriteFile: vi.fn(),
+  mockReadFile: vi.fn(),
 }));
 
-const mockMkdir = vi.mocked(fs.mkdir);
-const mockWriteFile = vi.mocked(fs.writeFile);
-const mockReadFile = vi.mocked(fs.readFile);
+vi.mock('fs/promises', async () => {
+  const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises');
+  return {
+    ...actual,
+    default: {
+      ...actual,
+      mkdir: mockMkdir,
+      writeFile: mockWriteFile,
+      readFile: mockReadFile,
+    },
+  };
+});
 
 describe('ApprovalStore', () => {
   let store: ApprovalStore;
   const testStorePath = '/test/path/approvals.json';
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
+    // Default mock implementations - file doesn't exist
+    mockReadFile.mockRejectedValue(new Error('File not found'));
+    mockMkdir.mockResolvedValue(undefined);
+    mockWriteFile.mockResolvedValue(undefined);
     store = new ApprovalStore(testStorePath);
   });
 
@@ -129,7 +141,7 @@ describe('ApprovalStore', () => {
 
       expect(mockWriteFile).toHaveBeenCalledWith(
         testStorePath,
-        expect.stringContaining('"id":"approval-123"')
+        expect.stringContaining('"id": "approval-123"')
       );
     });
 

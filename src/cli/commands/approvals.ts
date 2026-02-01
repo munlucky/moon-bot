@@ -31,7 +31,7 @@ export async function approvalsList(options: CliOptions): Promise<void> {
 }
 
 /** Approvals approve command */
-export async function approvalsApprove(id: string, options: CliOptions): Promise<void> {
+export async function approvalsApprove(id: string, _options: CliOptions): Promise<void> {
   try {
     const client = new GatewayRpcClient();
 
@@ -55,7 +55,7 @@ export async function approvalsApprove(id: string, options: CliOptions): Promise
 }
 
 /** Approvals deny command */
-export async function approvalsDeny(id: string, options: CliOptions): Promise<void> {
+export async function approvalsDeny(id: string, _options: CliOptions): Promise<void> {
   try {
     const client = new GatewayRpcClient();
 

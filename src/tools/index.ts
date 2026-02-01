@@ -1,8 +1,6 @@
 // Tool Registry and Integration
 
 import path from "path";
-import os from "os";
-import { randomUUID } from "crypto";
 import { createLogger, type Logger } from "../utils/logger.js";
 import type { SystemConfig, ToolSpec, ToolContext, ToolResult, ToolDefinition, ToolMeta } from "../types/index.js";
 import { ToolRuntime } from "./runtime/ToolRuntime.js";

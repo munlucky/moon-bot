@@ -7,7 +7,7 @@ import type {
   ToolAlternativeMap,
   ToolFailure,
 } from "./types.js";
-import { createLogger, type Logger } from "../../utils/logger.js";
+import { type Logger } from "../../utils/logger.js";
 
 /**
  * Default tool alternative mapping
@@ -56,7 +56,7 @@ export class AlternativeSelector {
   /**
    * Find alternative tools for a failed tool
    */
-  findAlternatives(failure: ToolFailure, failureType: FailureType): AlternativeTool[] {
+  findAlternatives(failure: ToolFailure, _failureType: FailureType): AlternativeTool[] {
     const { toolId } = failure;
 
     // Get configured alternatives

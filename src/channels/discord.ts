@@ -14,11 +14,11 @@ import type { SystemConfig, ChatMessage, TaskResponse } from "../types/index.js"
 import { createLogger, type Logger } from "../utils/logger.js";
 import { parseButtonCustomId } from "../tools/approval/handlers/discord-approval.js";
 import { ChannelGatewayClient } from "./GatewayClient.js";
-import type { DiscordEmbedMessage, DiscordButtonComponent } from "../tools/approval/types.js";
+import type { DiscordEmbedMessage } from "../tools/approval/types.js";
 
 // Type for the gateway call method (will be available when integration is complete)
 interface GatewayClient {
-  call(method: string, params: unknown): Promise<unknown>;
+  call(_method: string, _params: unknown): Promise<unknown>;
   isConnected(): boolean;
 }
 
@@ -148,7 +148,7 @@ export class DiscordAdapter {
 
   private async handleMessage(message: Message): Promise<void> {
     // Ignore bot messages
-    if (message.author.bot) return;
+    if (message.author.bot) {return;}
 
     // Check for mention gating in guild channels
     if (message.inGuild()) {
@@ -266,7 +266,7 @@ export class DiscordAdapter {
   }
 
   async sendToChannel(channelId: string, text: string): Promise<void> {
-    if (!this.client) return;
+    if (!this.client) {return;}
 
     try {
       const channel = await this.client.channels.fetch(channelId);

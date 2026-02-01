@@ -10,10 +10,10 @@ import type { NodeConnection } from "./types.js";
  * This avoids circular dependency with GatewayServer
  */
 export type NodeRpcSender = (
-  nodeId: string,
-  method: string,
-  params: unknown,
-  options?: { timeoutMs?: number }
+  _nodeId: string,
+  _method: string,
+  _params: unknown,
+  _options?: { timeoutMs?: number }
 ) => Promise<unknown>;
 
 /**
@@ -201,13 +201,13 @@ export class NodeExecutor {
   private config: Required<Omit<NodeExecutorConfig, 'retry'>> & { retry: RetryConfig };
   private rpcSender: NodeRpcSender | null = null;
   private pendingExecutions = new Map<string, {
-    resolve: (value: NodeExecutionResult) => void;
-    reject: (error: Error) => void;
+    resolve: (_value: NodeExecutionResult) => void;
+    reject: (_error: Error) => void;
     timeout: NodeJS.Timeout;
   }>();
   private pendingCaptures = new Map<string, {
-    resolve: (value: ScreenCaptureResult) => void;
-    reject: (error: Error) => void;
+    resolve: (_value: ScreenCaptureResult) => void;
+    reject: (_error: Error) => void;
     timeout: NodeJS.Timeout;
   }>();
 

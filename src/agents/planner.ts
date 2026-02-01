@@ -1,7 +1,7 @@
 // Planner: Breaks down goals into steps
 
 import { createLogger, type Logger } from "../utils/logger.js";
-import type { SystemConfig, Session, SessionMessage, Step, ToolDefinition } from "../types/index.js";
+import type { SystemConfig, Session, Step, ToolDefinition } from "../types/index.js";
 import { LLMClient, type LLMPlanRequest } from "../llm/LLMClient.js";
 
 export { Step } from "../types/index.js";
@@ -137,7 +137,7 @@ export class Planner {
   generateRemainingSteps(
     failedStep: Step,
     remainingGoals: string[],
-    completedSteps: Step[]
+    _completedSteps: Step[]
   ): Step[] {
     const newSteps: Step[] = [];
 

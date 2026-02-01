@@ -11,7 +11,6 @@ describe("NodeExecutor Integration Tests", () => {
   let mockRpcSender: NodeRpcSender;
 
   const testUserId = "test-user-123";
-  const testNodeId = "node-test-456";
   const testSocketId = "socket-test-789";
 
   beforeEach(() => {

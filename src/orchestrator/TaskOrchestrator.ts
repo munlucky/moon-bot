@@ -578,7 +578,7 @@ export class TaskOrchestrator {
    */
   private handleTaskError(taskId: string, error: { code: string; userMessage: string; internalMessage?: string; stack?: string }): void {
     const task = this.registry.get(taskId);
-    if (!task) return;
+    if (!task) {return;}
 
     this.registry.updateState(taskId, "FAILED", undefined, error);
 

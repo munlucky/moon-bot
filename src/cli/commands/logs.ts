@@ -63,13 +63,13 @@ async function tailLog(filePath: string, filterError: boolean): Promise<void> {
 
 /** Print log line with coloring */
 function printLogLine(line: string, filterError: boolean): void {
-  if (!line.trim()) return;
+  if (!line.trim()) {return;}
 
   const lowerLine = line.toLowerCase();
   const isError = lowerLine.includes("error") || lowerLine.includes("fail");
   const isWarn = lowerLine.includes("warn");
 
-  if (filterError && !isError) return;
+  if (filterError && !isError) {return;}
 
   if (isError) {
     console.log(chalk.red(line));

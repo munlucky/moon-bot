@@ -140,7 +140,7 @@ export class SessionManager {
 
   compact(sessionId: string): void {
     const session = this.sessions.get(sessionId);
-    if (!session) return;
+    if (!session) {return;}
 
     // Simple compaction: keep only last 50 messages
     if (session.messages.length > 50) {

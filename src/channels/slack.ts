@@ -1,7 +1,6 @@
 // Slack Channel Adapter
 
 import { App, type AppMentionEvent, type ButtonAction } from "@slack/bolt";
-import type { Block } from "@slack/types";
 import type { SystemConfig, ChatMessage, TaskResponse } from "../types/index.js";
 import { createLogger, type Logger } from "../utils/logger.js";
 import { parseButtonActionId } from "../tools/approval/handlers/slack-approval.js";
@@ -10,7 +9,7 @@ import type { SlackBlockMessage } from "../tools/approval/types.js";
 
 // Type for the gateway call method (will be available when integration is complete)
 interface GatewayClient {
-  call(method: string, params: unknown): Promise<unknown>;
+  call(_method: string, _params: unknown): Promise<unknown>;
   isConnected(): boolean;
 }
 
@@ -145,7 +144,7 @@ export class SlackAdapter {
    */
   private async handleAppMention(
     event: AppMentionEvent,
-    say: (textOrBlock: string | Record<string, unknown>) => Promise<unknown>
+    _say: (textOrBlock: string | Record<string, unknown>) => Promise<unknown>
   ): Promise<void> {
     // Extract text (remove bot mention)
     let text = event.text;
@@ -182,7 +181,7 @@ export class SlackAdapter {
   private async handleButtonInteraction(
     body: unknown,
     ack: () => Promise<void>,
-    respond: (response: Record<string, unknown>) => Promise<unknown>
+    _respond: (response: Record<string, unknown>) => Promise<unknown>
   ): Promise<void> {
     // Acknowledge the interaction first (must be done within 3 seconds)
     await ack();
