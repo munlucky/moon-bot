@@ -57,12 +57,12 @@ export class SlackAdapter {
 
     // Handle app_mention events
     this.app.event("app_mention", async ({ event, say }) => {
-      await this.handleAppMention(event as AppMentionEvent, say);
+      await this.handleAppMention(event as AppMentionEvent);
     });
 
     // Handle button interactions
     this.app.action(/^approval_/, async ({ body, ack, respond }) => {
-      await this.handleButtonInteraction(body, ack, respond);
+      await this.handleButtonInteraction(body, ack);
     });
 
     // Handle errors

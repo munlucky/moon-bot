@@ -234,7 +234,7 @@ export class GatewayServer {
 
     // Set up NodeExecutor RPC sender
     // NodeExecutor is stored in toolkit by createGatewayTools
-    const nodeExecutor = (this.toolkit as ToolkitWithResources).nodeExecutor;
+    const nodeExecutor = (this.toolkit as unknown as ToolkitWithResources).nodeExecutor;
     if (nodeExecutor) {
       nodeExecutor.setRpcSender(
         (nodeId: string, method: string, params: unknown, options?: { timeoutMs?: number }) =>

@@ -54,7 +54,7 @@ export class GatewayRpcClient {
   /** Connect to Gateway */
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const url = `ws://${this.host}:${this.port}`;
+      const url = `ws://${this._host}:${this._port}`;
       this.ws = new WebSocket(url);
 
       this.ws.on("open", () => {
@@ -94,7 +94,7 @@ export class GatewayRpcClient {
     };
 
     return new Promise((resolve, reject) => {
-      const timeoutMs = options?.timeout ?? this.timeout;
+      const timeoutMs = options?.timeout ?? this._timeout;
 
       // Set up timeout
       const timer = setTimeout(() => {

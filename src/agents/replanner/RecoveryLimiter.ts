@@ -39,7 +39,8 @@ export class RecoveryLimiter {
   /**
    * Check if recovery is possible for a failure
    */
-  canRecover(/* _failure: ToolFailure - reserved for future use */): boolean {
+  canRecover(_failure: ToolFailure): boolean {
+    // _failure parameter reserved for future use
     // Check global timeout
     const elapsed = Date.now() - this.globalStartTime;
     if (elapsed > this.config.globalTimeout) {

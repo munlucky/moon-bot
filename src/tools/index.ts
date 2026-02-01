@@ -42,8 +42,9 @@ import { createNodesTools } from "./nodes/NodesTool.js";
 
 /**
  * Extended Toolkit interface with additional resources for cleanup.
+ * This is a separate interface (not extending Toolkit) to avoid type compatibility issues.
  */
-export interface ToolkitWithResources extends Toolkit {
+export interface ToolkitWithResources {
   browserTool?: BrowserTool;
   processSessionManager?: ProcessSessionManager;
   claudeCodeSessionManager?: ClaudeCodeSessionManager;
@@ -55,7 +56,7 @@ export class Toolkit {
   private tools = new Map<string, ToolSpec>();
   private logger: Logger;
   private runtime: ToolRuntime | null = null;
-  private browserTool: BrowserTool | null = null;
+  protected browserTool: BrowserTool | null = null;
 
   constructor(config: SystemConfig) {
     this.logger = createLogger(config);
@@ -213,7 +214,7 @@ export async function createGatewayTools(
     candidateTools.push(...createBrowserTools(browserTool));
 
     // Store browser tool reference for cleanup
-    (toolkit as ToolkitWithResources).browserTool = browserTool;
+    (toolkit as unknown as ToolkitWithResources).browserTool = browserTool;
   }
 
   // Process tools (for interactive terminal sessions)
@@ -283,10 +284,10 @@ export async function createGatewayTools(
   }, 5 * 60 * 1000); // Every 5 minutes
 
   // Store session manager references for cleanup
-  (toolkit as ToolkitWithResources).processSessionManager = processSessionManager;
-  (toolkit as ToolkitWithResources).claudeCodeSessionManager = claudeCodeSessionManager;
-  (toolkit as ToolkitWithResources).nodeSessionManager = nodeSessionManager;
-  (toolkit as ToolkitWithResources).nodeExecutor = nodeExecutor;
+  (toolkit as unknown as ToolkitWithResources).processSessionManager = processSessionManager;
+  (toolkit as unknown as ToolkitWithResources).claudeCodeSessionManager = claudeCodeSessionManager;
+  (toolkit as unknown as ToolkitWithResources).nodeSessionManager = nodeSessionManager;
+  (toolkit as unknown as ToolkitWithResources).nodeExecutor = nodeExecutor;
 
   // Filter tools by profile and register
   const filteredTools = filterToolsByProfile(candidateTools, profile);
