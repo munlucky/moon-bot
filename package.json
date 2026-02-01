@@ -19,13 +19,16 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "cd tests/e2e/approval && vitest run",
+    "test:e2e:watch": "vitest --config tests/e2e/vitest.config.ts",
+    "test:e2e:ui": "vitest --config tests/e2e/vitest.config.ts --ui",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
     "cli": "node dist/cli.js"
   },
   "dependencies": {
-    "@slack/bolt": "^3.21.1",
     "@sinclair/typebox": "^0.33.0",
+    "@slack/bolt": "^3.21.1",
     "chalk": "^5.6.2",
     "chokidar": "^4.0.0",
     "cli-table3": "^0.6.5",
@@ -41,13 +44,17 @@
     "node-pty": "^1.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.1",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.5.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "@vitest/coverage-v8": "^4.0.18",
+    "@vitest/ui": "4.0.18",
     "eslint": "^9.0.0",
+    "msw": "^2.12.7",
     "prettier": "^3.3.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.5.0",
     "vitest": "^4.0.18"
   },

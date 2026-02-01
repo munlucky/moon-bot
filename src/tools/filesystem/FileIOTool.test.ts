@@ -5,7 +5,7 @@
  * Covers path validation, size limits, and error handling.
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, beforeAll, afterEach, afterAll, vi } from "vitest";
 import type { ToolContext } from "../../types/index.js";
 
 // Mock fs/promises and PathValidator BEFORE importing FileIOTool

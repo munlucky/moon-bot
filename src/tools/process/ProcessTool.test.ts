@@ -54,25 +54,40 @@ describe("ProcessTool", () => {
 
   describe("createProcessExecTool", () => {
     let execTool: ReturnType<typeof createProcessExecTool>;
+    let mockCreateSession: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
       execTool = createProcessExecTool(sessionManager, approvalManager);
+
+      // Mock sessionManager.createSession to return a mock session
+      const mockSession = {
+        id: "test-session-id",
+        userId: "test-user",
+        command: ["echo", "test"],
+        cwd: "/workspace",
+        pty: false,
+        status: "running" as const,
+        exitCode: null,
+        pid: 12345,
+        outputBuffer: [],
+        fullLog: [],
+        createdAt: Date.now(),
+        lastActivityAt: Date.now(),
+        handle: {
+          pid: 12345,
+          onData: vi.fn(),
+          onExit: vi.fn(),
+          write: vi.fn(() => true),
+          kill: vi.fn(() => true),
+        },
+      };
+
+      mockCreateSession = vi.spyOn(sessionManager, "createSession").mockResolvedValue(
+        mockSession as any
+      );
     });
 
     it("T1: should execute approved command successfully", async () => {
-      // Mock spawnProcess to return a mock handle
-      const mockHandle = {
-        pid: 12345,
-        onData: vi.fn(),
-        onExit: vi.fn(),
-        write: vi.fn(() => true),
-        kill: vi.fn(() => true),
-      };
-
-      vi.doMock("../process/PtyWrapper.js", () => ({
-        spawnProcess: vi.fn().mockResolvedValue(mockHandle),
-      }));
-
       const result = await execTool.run(
         { argv: ["echo", "hello"] },
         mockContext
@@ -85,18 +100,6 @@ describe("ProcessTool", () => {
     });
 
     it("T2: should handle string argv", async () => {
-      const mockHandle = {
-        pid: 12345,
-        onData: vi.fn(),
-        onExit: vi.fn(),
-        write: vi.fn(() => true),
-        kill: vi.fn(() => true),
-      };
-
-      vi.doMock("../process/PtyWrapper.js", () => ({
-        spawnProcess: vi.fn().mockResolvedValue(mockHandle),
-      }));
-
       const result = await execTool.run(
         { argv: "echo test" },
         mockContext
@@ -122,18 +125,6 @@ describe("ProcessTool", () => {
     });
 
     it("T4: should use custom cwd when provided", async () => {
-      const mockHandle = {
-        pid: 12345,
-        onData: vi.fn(),
-        onExit: vi.fn(),
-        write: vi.fn(() => true),
-        kill: vi.fn(() => true),
-      };
-
-      vi.doMock("../process/PtyWrapper.js", () => ({
-        spawnProcess: vi.fn().mockResolvedValue(mockHandle),
-      }));
-
       const result = await execTool.run(
         { argv: ["git", "status"], cwd: "/workspace/subdir" },
         mockContext
@@ -143,18 +134,6 @@ describe("ProcessTool", () => {
     });
 
     it("T5: should support PTY sessions", async () => {
-      const mockHandle = {
-        pid: 12345,
-        onData: vi.fn(),
-        onExit: vi.fn(),
-        write: vi.fn(() => true),
-        kill: vi.fn(() => true),
-      };
-
-      vi.doMock("../process/PtyWrapper.js", () => ({
-        spawnProcess: vi.fn().mockResolvedValue(mockHandle),
-      }));
-
       const result = await execTool.run(
         { argv: ["node", "script.js"], pty: true },
         mockContext
@@ -164,18 +143,6 @@ describe("ProcessTool", () => {
     });
 
     it("T6: should support custom environment variables", async () => {
-      const mockHandle = {
-        pid: 12345,
-        onData: vi.fn(),
-        onExit: vi.fn(),
-        write: vi.fn(() => true),
-        kill: vi.fn(() => true),
-      };
-
-      vi.doMock("../process/PtyWrapper.js", () => ({
-        spawnProcess: vi.fn().mockResolvedValue(mockHandle),
-      }));
-
       const result = await execTool.run(
         {
           argv: ["node", "script.js"],

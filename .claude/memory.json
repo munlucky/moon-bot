@@ -105,6 +105,13 @@
 {"type":"entity","name":"moon-bot::Component::FileIOTool","entityType":"component","observations":["파일 시스템 도구 (fs.read, fs.write, fs.list, fs.glob)","workspace boundary enforcement 지원","TypeBox 스키마 사용","Windows 호환성: glob 패턴은 / 기준으로 파싱","glob 구현: path.resolve()로 절대 경로 변환","패턴 매칭 시 경로를 /로 정규화하여 플랫폼 독립적 처리"]}
 {"type":"entity","name":"moon-bot::Convention::GlobPattern","entityType":"convention","observations":["glob 패턴은 항상 /를 경로 구분자로 사용","Windows에서도 path.sep(\\) 대신 /를 사용하여 패턴 파싱","패턴 매칭 시 경로를 /로 정규화하여 플랫폼 독립성 보장"]}
 {"type":"entity","name":"moon-bot::Convention::IntegrationTest","entityType":"convention","observations":["실제 파일 시스템이 필요한 통합 테스트는 vi.importActual() 사용","mock을 실제 fs 동작으로 재정의하여 테스트 작성","플랫폼 독립적인 경로 비교를 위해 path.join() 사용"]}
+{"type":"entity","name":"moonbot::Component::E2ETestFramework","entityType":"component","observations":["E2E 테스트를 위한 Vitest 기반 프레임워크 구축","tests/e2e/approval/ 디렉토리에 위치","playwright 대신 vitest 사용 (ESM 호환성 문제로 인해)","MSW로 Slack/Discord API Mock","WebSocket RPC 클라이언트로 Gateway와 통신","fixture: mock-server.ts, gateway-setup.ts, test-data.ts","helper: websocket-client.ts, approval-flow.ts, mock-adapters.ts","승인 시나리오: E01 Slack 승인, E02 Discord 거부, E03 타임아웃, E04 다중 플랫폼, E05 동시 요청"]}
+{"type":"entity","name":"moonbot::Component::ProcessToolTest","entityType":"component","observations":["PTY 테스트는 vi.spyOn으로 mock 방식 사용","ESM 환경에서는 vi.doMock 대신 vi.spyOn이 안정적","sessionManager.createSession 직접 mock하여 PTY 핸들 반환","31개 테스트 전체 통과"]}
+{"type":"entity","name":"moonbot::Component::FileIOToolTest","entityType":"component","observations":["beforeAll, afterAll, afterEach import 필요","파일 시스템 관련 단위 테스트 포함"]}
+{"type":"entity","name":"moonbot::Domain::ApprovalFlow","entityType":"domain","observations":["승인 플로우: tools.invoke -> awaiting_approval -> tools.approve/reject -> completed/failed","거부 시 ok: false 반환이 정상 동작 (APPROVAL_DENIED error)","Pending requests는 tools.getPending으로 조회 가능","승인 요청은 requestId로 식별"]}
+{"type":"entity","name":"moonbot::Convention::VitestESMMocking","entityType":"convention","observations":["ESM 환경에서는 vi.mock 대신 vi.spyOn 사용","vi.doMock은 hoisting 미작동으로 이미 import된 모듈에 적용 안 됨","sessionManager.createSession 같은 메서드를 직접 mock하는 것이 안정적"]}
+{"type":"entity","name":"moonbot::Convention::E2ETestNaming","entityType":"convention","observations":["E2E 테스트 ID: E01-E05 (승인 시나리오)","파일명: {feature}-flow.spec.ts (예: slack-approval-flow.spec.ts)","테스트 설명: should {action} (예: should complete tool approval flow)"]}
+{"type":"entity","name":"moonbot::Feature::E2ETests","entityType":"feature","observations":["단위 테스트 459개 완료 후 E2E 테스트 구현","Vitest 기반 E2E 테스트 프레임워크","Gateway fixture로 테스트 서버 시작/정지","MSW로 외부 API mock","17개 E2E 테스트 통과"]}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Channels","relationType":"manages"}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Agents","relationType":"orchestrates"}
 {"type":"relation","from":"moonbot::Component::Agents","to":"moonbot::Component::Tools","relationType":"uses"}
@@ -174,3 +181,7 @@
 {"type":"relation","from":"moonbot::Component::SlackApprovalHandler","to":"moonbot::Interface::ApprovalHandler","relationType":"implements"}
 {"type":"relation","from":"moonbot::Test::ApprovalStore","to":"moonbot::Component::ApprovalStore","relationType":"tests"}
 {"type":"relation","from":"moonbot::Test::SchemaValidator","to":"moonbot::Component::SchemaValidator","relationType":"tests"}
+{"type":"relation","from":"moonbot::Component::E2ETestFramework","to":"moonbot::Domain::ApprovalFlow","relationType":"tests"}
+{"type":"relation","from":"moonbot::Component::ProcessToolTest","to":"moonbot::Convention::VitestESMMocking","relationType":"uses"}
+{"type":"relation","from":"moonbot::Component::E2ETestFramework","to":"moonbot::Convention::VitestESMMocking","relationType":"uses"}
+{"type":"relation","from":"moonbot::Feature::E2ETests","to":"moonbot::Component::E2ETestFramework","relationType":"implements"}

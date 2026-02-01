@@ -25,3 +25,4 @@ config.json
 
 # Test coverage
 coverage/
+output-patch.yaml
