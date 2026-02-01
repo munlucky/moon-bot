@@ -361,37 +361,90 @@ describe('ApprovalManager', () => {
   describe('createDefaultConfig', () => {
     // T28 - Create directory if it doesn't exist
     it('T28: should create directory before writing config', async () => {
-      await expect(manager.createDefaultConfig()).resolves.not.toThrow();
+      mockMkdir.mockResolvedValue(undefined);
+      mockWriteFile.mockResolvedValue(undefined);
+
+      await manager.createDefaultConfig();
+
+      expect(mockMkdir).toHaveBeenCalled();
     });
 
     // T29 - Write default config to file
     it('T29: should write default config JSON to file', async () => {
-      await expect(manager.createDefaultConfig()).resolves.not.toThrow();
+      mockMkdir.mockResolvedValue(undefined);
+      mockWriteFile.mockResolvedValue(undefined);
+
+      await manager.createDefaultConfig();
+
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        mockConfigPath,
+        expect.stringContaining('"allowlist"')
+      );
+
+      // Verify JSON structure
+      const writeCall = mockWriteFile.mock.calls[0];
+      const writtenContent = JSON.parse(writeCall[1] as string);
+      expect(writtenContent).toHaveProperty('allowlist');
+      expect(writtenContent).toHaveProperty('denylist');
     });
 
     // T30 - Include default allowlist commands
     it('T30: should include default allowlist commands in config', async () => {
-      await expect(manager.createDefaultConfig()).resolves.not.toThrow();
+      mockMkdir.mockResolvedValue(undefined);
+      mockWriteFile.mockResolvedValue(undefined);
+
+      await manager.createDefaultConfig();
+
+      const writeCall = mockWriteFile.mock.calls[0];
+      const writtenContent = JSON.parse(writeCall[1] as string);
+      expect(writtenContent.allowlist.commands).toContain('git');
+      expect(writtenContent.allowlist.commands).toContain('npm');
     });
 
     // T31 - Include default denylist patterns
     it('T31: should include default denylist patterns in config', async () => {
-      await expect(manager.createDefaultConfig()).resolves.not.toThrow();
+      mockMkdir.mockResolvedValue(undefined);
+      mockWriteFile.mockResolvedValue(undefined);
+
+      await manager.createDefaultConfig();
+
+      const writeCall = mockWriteFile.mock.calls[0];
+      const writtenContent = JSON.parse(writeCall[1] as string);
+      expect(writtenContent.denylist.patterns).toContain('rm\\s+-rf\\s+/');
     });
 
     // T32 - Include workspaceRoot in CWD prefixes
     it('T32: should include $workspaceRoot in CWD prefixes', async () => {
-      await expect(manager.createDefaultConfig()).resolves.not.toThrow();
+      mockMkdir.mockResolvedValue(undefined);
+      mockWriteFile.mockResolvedValue(undefined);
+
+      await manager.createDefaultConfig();
+
+      const writeCall = mockWriteFile.mock.calls[0];
+      const writtenContent = JSON.parse(writeCall[1] as string);
+      expect(writtenContent.allowlist.cwdPrefix).toContain('$workspaceRoot');
     });
 
     // T33 - Handle existing directory error
     it('T33: should handle directory already exists error', async () => {
+      mockMkdir.mockRejectedValue(new Error('Directory exists'));
+      mockWriteFile.mockResolvedValue(undefined);
+
       await expect(manager.createDefaultConfig()).resolves.not.toThrow();
+      expect(mockWriteFile).toHaveBeenCalled();
     });
 
     // T34 - Handle write error
     it('T34: should call writeFile to create config', async () => {
-      await expect(manager.createDefaultConfig()).resolves.not.toThrow();
+      mockMkdir.mockResolvedValue(undefined);
+      mockWriteFile.mockResolvedValue(undefined);
+
+      await manager.createDefaultConfig();
+
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        mockConfigPath,
+        expect.any(String)
+      );
     });
   });
 

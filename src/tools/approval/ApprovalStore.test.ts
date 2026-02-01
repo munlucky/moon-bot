@@ -63,9 +63,17 @@ describe('ApprovalStore', () => {
     });
 
     // T2 - Constructor with custom path
-    it('T2: should use custom path when provided', () => {
-      const customStore = new ApprovalStore(testStorePath);
+    it('T2: should use custom path when provided', async () => {
+      const customPath = '/custom/path/approvals.json';
+      const customStore = new ApprovalStore(customPath);
+
       expect(customStore).toBeDefined();
+
+      // Verify the path is actually used when loading
+      mockReadFile.mockResolvedValue(JSON.stringify({ requests: [] }));
+      await customStore.load();
+
+      expect(mockReadFile).toHaveBeenCalledWith(customPath, 'utf-8');
     });
 
     // T3 - Initialize empty requests map

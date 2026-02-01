@@ -325,18 +325,31 @@ describe('slack-approval', () => {
 
     // T27 - Send request without adapter (silent skip)
     it('T27: should silently skip sendRequest when adapter not set', async () => {
+      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const request = createMockRequest();
 
       await expect(handler.sendRequest(request)).resolves.not.toThrow();
+
+      // Adapter is not set, so should skip without warning
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+      consoleWarnSpy.mockRestore();
     });
 
     // T28 - Send request without channel ID (warns but doesn't throw)
     it('T28: should handle sendRequest without channel ID', async () => {
+      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       handler.setAdapter(mockAdapter);
       // Don't set channel ID
       const request = createMockRequest();
 
       await expect(handler.sendRequest(request)).resolves.not.toThrow();
+
+      // Channel ID is not set, so should skip with warning
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('No channel ID configured')
+      );
+      expect(mockAdapter.sendBlocks).not.toHaveBeenCalled();
+      consoleWarnSpy.mockRestore();
     });
 
     // T29 - Send request successfully
@@ -346,7 +359,10 @@ describe('slack-approval', () => {
 
       vi.mocked(mockAdapter.sendBlocks).mockResolvedValue('message-ts-123');
 
-      const request = createMockRequest();
+      const request = createMockRequest({
+        toolId: 'test.tool',
+        input: { command: 'test' },
+      });
       await handler.sendRequest(request);
 
       expect(mockAdapter.sendBlocks).toHaveBeenCalledWith(
@@ -356,6 +372,17 @@ describe('slack-approval', () => {
           fallbackText: expect.any(String),
         })
       );
+
+      // Verify message content structure
+      const callArgs = vi.mocked(mockAdapter.sendBlocks).mock.calls[0];
+      const blocksMessage = callArgs[1] as { blocks: Array<{ type: string; text?: { text: string } }> };
+      const blocks = blocksMessage.blocks;
+      expect(blocks).toBeDefined();
+      expect(blocks.length).toBeGreaterThan(0);
+
+      // Check for tool ID in message
+      const blocksStr = JSON.stringify(blocks);
+      expect(blocksStr).toContain('test.tool');
     });
 
     // T30 - Handle sendBlocks error
@@ -386,9 +413,14 @@ describe('slack-approval', () => {
 
     // T32 - Send update without adapter (silent skip)
     it('T32: should silently skip sendUpdate when adapter not set', async () => {
+      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const request = createMockRequest();
 
       await expect(handler.sendUpdate(request)).resolves.not.toThrow();
+
+      // Adapter is not set, so should skip without warning
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
+      consoleWarnSpy.mockRestore();
     });
 
     // T33 - Send update without stored message reference

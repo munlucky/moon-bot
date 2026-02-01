@@ -415,6 +415,223 @@ describe("ToolRuntime", () => {
     });
   });
 
+  describe("approval state transitions", () => {
+    it("should transition status: running -> awaiting_approval when approval is required", async () => {
+      const systemRunTool: ToolSpec = {
+        id: "system.run",
+        description: "System run tool",
+        requiresApproval: true,
+        schema: {
+          type: "object",
+          properties: {
+            argv: { type: "array" },
+          },
+        },
+        run: vi.fn().mockResolvedValue("result"),
+      };
+
+      const runtimeWithApproval = new ToolRuntime(mockConfig, {
+        enableApprovals: true,
+        workspaceRoot: "/tmp/test",
+        defaultTimeoutMs: 5000,
+        maxConcurrent: 2,
+      });
+
+      runtimeWithApproval.register(systemRunTool);
+
+      vi.spyOn(
+        (runtimeWithApproval as any).approvalManager,
+        "loadConfig"
+      ).mockResolvedValue();
+      vi.spyOn(
+        (runtimeWithApproval as any).approvalManager,
+        "checkApproval"
+      ).mockResolvedValue({ approved: false, reason: "Needs approval" });
+
+      const invokeResult = await runtimeWithApproval.invoke(
+        "system.run",
+        "s1",
+        { argv: ["echo", "test"] },
+        "a1",
+        "u1"
+      );
+
+      expect(invokeResult.awaitingApproval).toBe(true);
+
+      // Check status transition: running -> awaiting_approval
+      const invocation = runtimeWithApproval.getInvocation(invokeResult.invocationId);
+      expect(invocation?.status).toBe("awaiting_approval");
+    });
+
+    it("should transition status: awaiting_approval -> running -> completed on approval", async () => {
+      const systemRunTool: ToolSpec = {
+        id: "system.run",
+        description: "System run tool",
+        requiresApproval: true,
+        schema: {
+          type: "object",
+          properties: {
+            argv: { type: "array" },
+          },
+        },
+        run: vi.fn().mockResolvedValue("approved result"),
+      };
+
+      const runtimeWithApproval = new ToolRuntime(mockConfig, {
+        enableApprovals: true,
+        workspaceRoot: "/tmp/test",
+        defaultTimeoutMs: 5000,
+        maxConcurrent: 2,
+      });
+
+      runtimeWithApproval.register(systemRunTool);
+
+      vi.spyOn(
+        (runtimeWithApproval as any).approvalManager,
+        "loadConfig"
+      ).mockResolvedValue();
+      vi.spyOn(
+        (runtimeWithApproval as any).approvalManager,
+        "checkApproval"
+      ).mockResolvedValue({ approved: false, reason: "Needs approval" });
+
+      const invokeResult = await runtimeWithApproval.invoke(
+        "system.run",
+        "s1",
+        { argv: ["echo", "test"] },
+        "a1",
+        "u1"
+      );
+
+      // Status after invoke: awaiting_approval
+      let invocation = runtimeWithApproval.getInvocation(invokeResult.invocationId);
+      expect(invocation?.status).toBe("awaiting_approval");
+
+      // Grant approval
+      const approveResult = await runtimeWithApproval.approveRequest(
+        invokeResult.invocationId,
+        true
+      );
+
+      // Status after approval: completed
+      invocation = runtimeWithApproval.getInvocation(invokeResult.invocationId);
+      expect(invocation?.status).toBe("completed");
+      expect(approveResult.ok).toBe(true);
+    });
+
+    it("should transition status: awaiting_approval -> failed on denial", async () => {
+      const systemRunTool: ToolSpec = {
+        id: "system.run",
+        description: "System run tool",
+        requiresApproval: true,
+        schema: {
+          type: "object",
+          properties: {
+            argv: { type: "array" },
+          },
+        },
+        run: vi.fn().mockResolvedValue("result"),
+      };
+
+      const runtimeWithApproval = new ToolRuntime(mockConfig, {
+        enableApprovals: true,
+        workspaceRoot: "/tmp/test",
+        defaultTimeoutMs: 5000,
+        maxConcurrent: 2,
+      });
+
+      runtimeWithApproval.register(systemRunTool);
+
+      vi.spyOn(
+        (runtimeWithApproval as any).approvalManager,
+        "loadConfig"
+      ).mockResolvedValue();
+      vi.spyOn(
+        (runtimeWithApproval as any).approvalManager,
+        "checkApproval"
+      ).mockResolvedValue({ approved: false, reason: "Needs approval" });
+
+      const invokeResult = await runtimeWithApproval.invoke(
+        "system.run",
+        "s1",
+        { argv: ["echo", "test"] },
+        "a1",
+        "u1"
+      );
+
+      // Status after invoke: awaiting_approval
+      let invocation = runtimeWithApproval.getInvocation(invokeResult.invocationId);
+      expect(invocation?.status).toBe("awaiting_approval");
+
+      // Deny approval
+      const denyResult = await runtimeWithApproval.approveRequest(
+        invokeResult.invocationId,
+        false
+      );
+
+      // Status after denial: failed
+      invocation = runtimeWithApproval.getInvocation(invokeResult.invocationId);
+      expect(invocation?.status).toBe("failed");
+      expect(denyResult.ok).toBe(false);
+      expect(denyResult.error?.code).toBe("APPROVAL_DENIED");
+    });
+
+    it("should emit APPROVAL_REQUESTED event when approval is required", async () => {
+      const systemRunTool: ToolSpec = {
+        id: "system.run",
+        description: "System run tool",
+        requiresApproval: true,
+        schema: {
+          type: "object",
+          properties: {
+            argv: { type: "array" },
+          },
+        },
+        run: vi.fn().mockResolvedValue("result"),
+      };
+
+      const runtimeWithApproval = new ToolRuntime(mockConfig, {
+        enableApprovals: true,
+        workspaceRoot: "/tmp/test",
+        defaultTimeoutMs: 5000,
+        maxConcurrent: 2,
+      });
+
+      runtimeWithApproval.register(systemRunTool);
+
+      vi.spyOn(
+        (runtimeWithApproval as any).approvalManager,
+        "loadConfig"
+      ).mockResolvedValue();
+      vi.spyOn(
+        (runtimeWithApproval as any).approvalManager,
+        "checkApproval"
+      ).mockResolvedValue({ approved: false, reason: "Needs approval" });
+
+      // Listen for approval requested event
+      const approvalRequestedSpy = vi.fn();
+      runtimeWithApproval.on(ToolRuntime.Events.APPROVAL_REQUESTED, approvalRequestedSpy);
+
+      const invokeResult = await runtimeWithApproval.invoke(
+        "system.run",
+        "s1",
+        { argv: ["echo", "test"] },
+        "a1",
+        "u1"
+      );
+
+      expect(invokeResult.awaitingApproval).toBe(true);
+      expect(approvalRequestedSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          invocationId: invokeResult.invocationId,
+          toolId: "system.run",
+          sessionId: "s1",
+          userId: "u1",
+        })
+      );
+    });
+  });
+
   describe("approveRequest", () => {
     it("should approve a pending request for system.run", async () => {
       const systemRunTool: ToolSpec = {

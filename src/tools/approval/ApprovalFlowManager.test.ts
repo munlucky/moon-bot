@@ -94,9 +94,25 @@ describe('ApprovalFlowManager', () => {
     });
 
     // T2 - Constructor with custom timeout
-    it('T2: should create manager with custom timeout', () => {
-      const newManager = new ApprovalFlowManager(mockStore, { timeoutMs: 600000 });
-      expect(newManager).toBeInstanceOf(EventEmitter);
+    it('T2: should create manager with custom timeout', async () => {
+      const customTimeout = 600000;
+      const newManager = new ApprovalFlowManager(mockStore, { timeoutMs: customTimeout });
+      newManager.registerHandler('slack', mockHandler);
+
+      let capturedRequest: ApprovalRequest | undefined;
+      vi.mocked(mockStore.add).mockImplementation((request) => {
+        capturedRequest = request;
+        return Promise.resolve(undefined);
+      });
+      vi.mocked(mockStore.load).mockResolvedValue(undefined);
+
+      const invocation = createMockInvocation();
+      await newManager.requestApproval(invocation);
+
+      expect(capturedRequest).toBeDefined();
+      const expectedExpiresAt = capturedRequest!.createdAt + customTimeout;
+      expect(capturedRequest!.expiresAt).toBe(expectedExpiresAt);
+      expect(mockStore.add).toHaveBeenCalled();
     });
   });
 
@@ -132,11 +148,18 @@ describe('ApprovalFlowManager', () => {
 
   describe('unregisterHandler', () => {
     // T6 - Unregister existing handler
-    it('T6: should unregister handler', () => {
+    it('T6: should unregister handler', async () => {
       manager.registerHandler('slack', mockHandler);
       manager.unregisterHandler('slack');
 
-      expect(manager).toBeDefined();
+      vi.mocked(mockStore.load).mockResolvedValue(undefined);
+      vi.mocked(mockStore.add).mockResolvedValue(undefined);
+
+      const invocation = createMockInvocation();
+      await manager.requestApproval(invocation);
+
+      // Handler was unregistered, so sendRequest should not be called
+      expect(mockHandler.sendRequest).not.toHaveBeenCalled();
     });
 
     // T7 - Unregister non-existent handler (no-op)
