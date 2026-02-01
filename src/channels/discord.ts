@@ -8,7 +8,7 @@ import {
   ButtonInteraction,
   EmbedBuilder,
   APIActionRowComponent,
-  APIMessage,
+  APIButtonComponent,
 } from "discord.js";
 import type { SystemConfig, ChatMessage, TaskResponse } from "../types/index.js";
 import { createLogger, type Logger } from "../utils/logger.js";
@@ -184,8 +184,6 @@ export class DiscordAdapter {
 
     this.logger.info(`Message from Discord: ${text}`);
 
-    // Send to gateway via WebSocket
-    // TODO: Implement WebSocket client to communicate with gateway
     await this.sendToGateway(chatMessage);
 
     // Handle attachments
@@ -313,19 +311,19 @@ export class DiscordAdapter {
       }
 
       // Build components (buttons) - use proper Discord.js types
-      const components: any[] = [];
+      const components: APIActionRowComponent<APIButtonComponent>[] = [];
       if (embed.components && embed.components.length > 0) {
         for (const actionRow of embed.components) {
           const rowComponents = actionRow.components.map((button) => ({
             type: button.type,
             style: button.style,
             label: button.label,
-            customId: button.custom_id,
+            custom_id: button.custom_id,
           }));
           components.push({
             type: actionRow.type,
             components: rowComponents,
-          });
+          } as APIActionRowComponent<APIButtonComponent>);
         }
       }
 

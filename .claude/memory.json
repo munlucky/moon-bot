@@ -90,6 +90,11 @@
 {"type":"entity","name":"moonbot::Test::NodeExecutorIntegration","entityType":"test","observations":["파일: src/tools/nodes/NodeExecutor.integration.test.ts","통합 테스트 17개","커버리지: 페어링, 캡처, 실행, 선택, 동의, 에러"]}
 {"type":"entity","name":"moonbot::Convention::RetryPattern","entityType":"convention","observations":["네트워크 재시도: Exponential backoff + Jitter","기본 설정: maxRetries=3, initialDelayMs=1000, maxDelayMs=10000, backoffMultiplier=2","Jitter: ±15% 랜덤 지연으로 thundering herd 방지","재시도 가능 에러: NODE_TIMEOUT, NETWORK_ERROR, ETIMEDOUT, ECONNRESET, ECONNREFUSED","비재시도 에러: PERMISSION_DENIED, CONSENT_REQUIRED, NODE_NOT_FOUND"]}
 {"type":"entity","name":"moonbot::Convention::RPCTypes","entityType":"convention","observations":["순환 참조 방지: 함수 타입 사용 (TypeScript)","예: NodeRpcSender = (nodeId, method, params, options) => Promise<unknown>","이점: 구현체 직접 참조 없이 인터페이스만 주입 가능","GatewayServer → NodeExecutor: setRpcSender()로 연결"]}
+{"type":"entity","name":"moonbot::Component::SlackAdapter","entityType":"component","observations":["Slack Bolt App 기반 채널 어댑터 구현","AppMention 이벤트 수신 처리","approval 버튼 interaction 처리","WebSocket Gateway 연동","src/channels/slack.ts (358 lines)","@slack/bolt 의존성 사용","DiscordAdapter와 동일한 인터페이스 구현"]}
+{"type":"entity","name":"moonbot::Component::SlackApprovalHandler","entityType":"component","observations":["Slack Block Kit 기반 승인 요청 메시지 포맷팅","승인 버튼 생성 (Approve/Reject)","action_id 파싱: approval_{requestId}_{action}","메시지 업데이트 기능","src/tools/approval/handlers/slack-approval.ts (345 lines)","SlackApprovalHandler 클래스 implements ApprovalHandler"]}
+{"type":"entity","name":"moonbot::Config::ESLint","entityType":"config","observations":["ESLint 9.x Flat Config 사용","eslint.config.js 파일 기반","TypeScript parser 사용","Vitest globals 정의 (describe, it, expect, vi)","dist/, node_modules/, *.config.js 무시"]}
+{"type":"entity","name":"moonbot::Test::ApprovalStore","entityType":"test","observations":["ApprovalStore 단위 테스트 (29개 케이스)","파일: src/tools/approval/ApprovalStore.test.ts","CRUD 작업 테스트","만료 처리 테스트","fs/promises mock 사용"]}
+{"type":"entity","name":"moonbot::Test::SchemaValidator","entityType":"test","observations":["SchemaValidator 단위 테스트 (20개 케이스)","파일: src/tools/runtime/SchemaValidator.test.ts","validate() 성공/실패 케이스","fromJsonSchema() 타입 변환 테스트","Zod 스키마 검증 테스트"]}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Channels","relationType":"manages"}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Agents","relationType":"orchestrates"}
 {"type":"relation","from":"moonbot::Component::Agents","to":"moonbot::Component::Tools","relationType":"uses"}
@@ -154,3 +159,8 @@
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::NodeExecutor","relationType":"configures"}
 {"type":"relation","from":"moonbot::Test::NodeExecutorUnit","to":"moonbot::Component::NodeExecutor","relationType":"tests"}
 {"type":"relation","from":"moonbot::Test::NodeExecutorIntegration","to":"moonbot::Component::NodeExecutor","relationType":"tests"}
+{"type":"relation","from":"moonbot::Component::SlackAdapter","to":"moonbot::Component::ChannelGatewayClient","relationType":"uses"}
+{"type":"relation","from":"moonbot::Component::SlackAdapter","to":"moonbot::Component::SlackApprovalHandler","relationType":"uses"}
+{"type":"relation","from":"moonbot::Component::SlackApprovalHandler","to":"moonbot::Interface::ApprovalHandler","relationType":"implements"}
+{"type":"relation","from":"moonbot::Test::ApprovalStore","to":"moonbot::Component::ApprovalStore","relationType":"tests"}
+{"type":"relation","from":"moonbot::Test::SchemaValidator","to":"moonbot::Component::SchemaValidator","relationType":"tests"}

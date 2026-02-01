@@ -26,7 +26,7 @@ export interface ApprovalResponse {
 
 export interface ApprovalNotification {
   request: ApprovalRequest;
-  surfaces: Array<"discord" | "cli" | "websocket">;
+  surfaces: Array<"discord" | "slack" | "cli" | "websocket">;
 }
 
 export interface DiscordButtonComponent {
@@ -42,6 +42,14 @@ export interface DiscordEmbedMessage {
   color: number;
   fields: Array<{ name: string; value: string; inline: boolean }>;
   components?: Array<{ type: number; components: DiscordButtonComponent[] }>;
+}
+
+// Slack Block Kit types
+import type { Block } from "@slack/types";
+
+export interface SlackBlockMessage {
+  blocks: Block[];
+  fallbackText: string;
 }
 
 export interface ApprovalHandler {
