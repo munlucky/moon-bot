@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import {
   SystemPromptBuilder,
   DEFAULT_SAFETY_POLICY,
@@ -119,6 +119,9 @@ describe("SystemPromptBuilder", () => {
     });
 
     it("should include user info section when configured", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2024-01-15T10:30:00Z"));
+
       const builder = SystemPromptBuilder.createFull({
         tools: mockTools,
         userInfo: {
@@ -132,6 +135,9 @@ describe("SystemPromptBuilder", () => {
       expect(prompt).toContain("## User Context");
       expect(prompt).toContain("Asia/Seoul");
       expect(prompt).toContain("user123");
+      expect(prompt).toContain("**Current Time**:");
+
+      vi.useRealTimers();
     });
 
     it("should include runtime section when configured", () => {

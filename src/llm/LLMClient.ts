@@ -161,7 +161,7 @@ export class LLMClient {
     const useStructuredPrompt = request?.useStructuredPrompt ?? true;
 
     // Use new structured prompt builder
-    if (useStructuredPrompt && toolDefinitions && toolDefinitions.length > 0) {
+    if (useStructuredPrompt && toolDefinitions) {
       const builder = SystemPromptBuilder.createFull({
         tools: toolDefinitions,
         workspace: request?.workspace,
@@ -300,7 +300,7 @@ Respond ONLY with valid JSON in this format:
     const useStructuredPrompt = request?.useStructuredPrompt ?? true;
 
     // Use new structured prompt builder
-    if (useStructuredPrompt && toolDefinitions && toolDefinitions.length > 0) {
+    if (useStructuredPrompt && toolDefinitions) {
       const builder = SystemPromptBuilder.createFull({
         tools: toolDefinitions,
         runtime: request?.runtime,
