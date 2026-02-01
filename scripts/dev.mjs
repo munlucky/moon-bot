@@ -124,7 +124,7 @@ function stopByPort(port) {
   }
 }
 
-function startGateway() {
+async function startGateway() {
   const existingPid = readPid(GATEWAY_PID);
   if (existingPid && isProcessRunning(existingPid)) {
     console.log(`Gateway already running (PID ${existingPid})`);
@@ -150,7 +150,7 @@ function startGateway() {
   console.log(`Gateway started (PID ${proc.pid})`);
 }
 
-function startDiscord() {
+async function startDiscord() {
   const existingPid = readPid(DISCORD_PID);
   if (existingPid && isProcessRunning(existingPid)) {
     console.log(`Discord bot already running (PID ${existingPid})`);

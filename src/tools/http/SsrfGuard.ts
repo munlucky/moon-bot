@@ -273,9 +273,11 @@ export class SsrfGuard {
       const url = new URL(urlString);
       const hostname = url.hostname.replace(/^\[|\]$/g, "");
 
-      // Skip DNS resolution for IP addresses
+      // Skip DNS resolution for IP addresses (using Node.js built-in net.isIP)
       const ipv4Regex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-      if (ipv4Regex.test(hostname) || hostname.includes(":")) {
+      // Use net.isIP for robust IP address detection (returns 0 for non-IP, 4 for IPv4, 6 for IPv6)
+      const { isIP } = await import("net");
+      if (isIP(hostname) !== 0) {
         return { allowed: true, resolvedIp: hostname };
       }
 
