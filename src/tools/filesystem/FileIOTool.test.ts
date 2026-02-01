@@ -304,10 +304,17 @@ describe("FileIOTool", () => {
     const globTool = createFileGlobTool();
 
     // Helper to create mock directory entries
-    const createMockDirent = (name: string, isDir: boolean) => ({
+    const createMockDirent = (name: string, isDir: boolean): import("fs").Dirent => ({
       name,
       isFile: () => !isDir,
       isDirectory: () => isDir,
+      isBlockDevice: () => false,
+      isCharacterDevice: () => false,
+      isSymbolicLink: () => false,
+      isFIFO: () => false,
+      isSocket: () => false,
+      path: "",
+      parentPath: "",
     });
 
     it("T17: should match files with glob pattern at workspace root", async () => {
@@ -319,15 +326,15 @@ describe("FileIOTool", () => {
             createMockDirent("test.js", false),
             createMockDirent("other.txt", false),
             createMockDirent("src", true),
-          ] as any;
+          ] as import("fs").Dirent[];
         }
         if (dirPath === "/workspace/src") {
-          return [createMockDirent("file.ts", false)] as any;
+          return [createMockDirent("file.ts", false)] as import("fs").Dirent[];
         }
         return [];
       });
 
-      mockStat.mockResolvedValue({ size: 100 } as any);
+      mockStat.mockResolvedValue({ size: 100 } as import("fs").Stats);
 
       const result = await globTool.run({ pattern: "*.txt" }, mockContext);
 
@@ -345,15 +352,15 @@ describe("FileIOTool", () => {
           return [
             createMockDirent("test.txt", false),
             createMockDirent("src", true),
-          ] as any;
+          ] as import("fs").Dirent[];
         }
         if (dirPath === "/workspace/src") {
-          return [createMockDirent("file.ts", false)] as any;
+          return [createMockDirent("file.ts", false)] as import("fs").Dirent[];
         }
         return [];
       });
 
-      mockStat.mockResolvedValue({ size: 100 } as any);
+      mockStat.mockResolvedValue({ size: 100 } as import("fs").Stats);
 
       const result = await globTool.run({ pattern: "src/file.ts" }, mockContext);
 

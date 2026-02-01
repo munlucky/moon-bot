@@ -17,7 +17,6 @@ describe("Smoke Tests", () => {
     });
 
     test("should have crypto module available", () => {
-      const crypto = require("crypto");
       const uuid = crypto.randomUUID();
       expect(uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
     });
@@ -59,16 +58,11 @@ describe("Smoke Tests", () => {
         return;
       }
 
-      let client: WebSocket & { clientId: string };
-      try {
-        client = await createGatewayClient(gatewayPort, gatewayToken);
-        expect(client).toBeDefined();
-        expect(client.clientId).toBeTruthy();
-        expect(client.readyState).toBe(1); // WebSocket.OPEN
-        client.close();
-      } catch (error) {
-        console.warn("Client connection failed:", error);
-      }
+      const client = await createGatewayClient(gatewayPort, gatewayToken);
+      expect(client).toBeDefined();
+      expect(client.clientId).toBeTruthy();
+      expect(client.readyState).toBe(1); // WebSocket.OPEN
+      client.close();
     }, 10000);
   });
 });
