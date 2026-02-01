@@ -22,3 +22,6 @@ config.json
 .claude/docs/tasks/
 ~/.moonbot
 .moonbot-dev/
+
+# Test coverage
+coverage/
