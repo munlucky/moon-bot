@@ -280,7 +280,7 @@ export function createFileGlobTool(): ToolSpec<FileGlobInput, { paths: string[] 
 
           // Convert glob pattern to regex
           // Pattern uses '/' as separator (glob standard)
-          let patternRegex = input.pattern
+          const patternRegex = input.pattern
             .replace(/\./g, "\\.")     // Literal dots
             .replace(/\*\*/g, ".*")     // ** matches any number of directories
             .replace(/\*/g, "[^/]*")    // * matches any characters except /

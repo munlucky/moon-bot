@@ -10,9 +10,12 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "dev:start": "powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 start -Build",
-    "dev:stop": "powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 stop",
-    "dev:restart": "powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 restart -Build",
+    "dev:start": "node scripts/dev.mjs start --build",
+    "dev:stop": "node scripts/dev.mjs stop",
+    "dev:restart": "node scripts/dev.mjs restart --build",
+    "dev:start:win": "powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 start -Build",
+    "dev:stop:win": "powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 stop",
+    "dev:restart:win": "powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 restart -Build",
     "gateway": "node dist/gateway/index.js",
     "gateway:watch": "bun run src/gateway/index.ts",
     "discord": "node dist/discord-bot.js",
@@ -29,6 +32,7 @@
   "dependencies": {
     "@sinclair/typebox": "^0.33.0",
     "@slack/bolt": "^3.21.1",
+    "@slack/types": "^2.19.0",
     "chalk": "^5.6.2",
     "chokidar": "^4.0.0",
     "cli-table3": "^0.6.5",
@@ -44,6 +48,7 @@
     "node-pty": "^1.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
     "@playwright/test": "^1.58.1",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.5.0",

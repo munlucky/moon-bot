@@ -13,7 +13,7 @@ const mockFetch = vi.fn();
 global.fetch = mockFetch as any;
 
 // Mock fs/promises for download tool and PathValidator BEFORE importing HttpTool
-const { mockWriteFile: mockFsWriteFile, mockHttpPathValidatorValidate } = vi.hoisted(() => {
+const { mockWriteFile: mockFsWriteFile, mockHttpPathValidatorValidate, mockSsrfResolveAndCheck, mockSsrfCreateSafeFetchUrl } = vi.hoisted(() => {
   return {
     mockWriteFile: vi.fn(),
     mockHttpPathValidatorValidate: vi.fn((inputPath: string, workspaceRoot: string) => {
@@ -38,8 +38,58 @@ const { mockWriteFile: mockFsWriteFile, mockHttpPathValidatorValidate } = vi.hoi
         resolvedPath: workspaceRoot + "/" + inputPath.replace(/^\.\//, ""),
       };
     }),
+    mockSsrfResolveAndCheck: vi.fn((url: string) => {
+      // Block non-HTTP protocols
+      if (url.startsWith("file://") || url.startsWith("ftp://") ||
+          url.startsWith("data:") || url.startsWith("javascript:")) {
+        return Promise.resolve({ allowed: false, reason: `Blocked protocol in URL: ${url}` });
+      }
+      // Block internal/localhost URLs
+      const blockedPatterns = [
+        /localhost/i,
+        /127\.0\.0\.\d+/,
+        /192\.168\./,
+        /10\.\d+\.\d+\.\d+/,
+        /172\.(1[6-9]|2\d|3[01])\./,
+        /::1/,
+        /\[::1\]/,
+      ];
+      for (const pattern of blockedPatterns) {
+        if (pattern.test(url)) {
+          return Promise.resolve({ allowed: false, reason: `Blocked URL: ${url}` });
+        }
+      }
+      // Allow external URLs (for testing)
+      return Promise.resolve({ allowed: true, resolvedIp: "93.184.216.34" });
+    }),
+    mockSsrfCreateSafeFetchUrl: vi.fn((url: string, resolvedIp: string) => {
+      return { url, headers: {} };
+    }),
   };
 });
+
+// Mock SsrfGuard
+vi.mock("./SsrfGuard.js", () => ({
+  SsrfGuard: {
+    checkUrl: vi.fn((url: string) => {
+      const blockedPatterns = [
+        /localhost/i,
+        /127\.0\.0\.\d+/,
+        /192\.168\./,
+        /10\.\d+\.\d+\.\d+/,
+        /172\.(1[6-9]|2\d|3[01])\./,
+      ];
+      for (const pattern of blockedPatterns) {
+        if (pattern.test(url)) {
+          return { allowed: false, reason: `Blocked URL: ${url}` };
+        }
+      }
+      return { allowed: true };
+    }),
+    resolveAndCheck: mockSsrfResolveAndCheck,
+    createSafeFetchUrl: mockSsrfCreateSafeFetchUrl,
+  },
+}));
 
 // Mock PathValidator
 vi.mock("../filesystem/PathValidator.js", () => ({
@@ -95,7 +145,7 @@ describe("HttpTool", () => {
         statusText: "OK",
         headers: {
           get: vi.fn((name: string) => {
-            if (name === "content-length") return "100";
+            if (name === "content-length") {return "100";}
             return null;
           }),
           forEach: vi.fn((callback: Function) => {
@@ -251,7 +301,7 @@ describe("HttpTool", () => {
         statusText: "OK",
         headers: {
           get: vi.fn((name: string) => {
-            if (name === "content-length") return "20971520"; // 20MB
+            if (name === "content-length") {return "20971520";} // 20MB
             return null;
           }),
           forEach: vi.fn(),
@@ -327,7 +377,7 @@ describe("HttpTool", () => {
         statusText: "OK",
         headers: {
           get: vi.fn((name: string) => {
-            if (name === "content-length") return "100";
+            if (name === "content-length") {return "100";}
             return null;
           }),
         },
@@ -383,7 +433,7 @@ describe("HttpTool", () => {
         statusText: "OK",
         headers: {
           get: vi.fn((name: string) => {
-            if (name === "content-length") return "20971520"; // 20MB
+            if (name === "content-length") {return "20971520";} // 20MB
             return null;
           }),
         },
@@ -447,7 +497,7 @@ describe("HttpTool", () => {
         statusText: "OK",
         headers: {
           get: vi.fn((name: string) => {
-            if (name === "content-length") return null; // No content-length header
+            if (name === "content-length") {return null;} // No content-length header
             return null;
           }),
         },

@@ -10,6 +10,7 @@
 4. [모듈별 상세 설명](#4-모듈별-상세-설명)
 5. [데이터 흐름](#5-데이터-흐름)
 6. [시작하기](#6-시작하기)
+7. [보안 아키텍처](#7-보안-아키텍처)
 
 ---
 
@@ -782,6 +783,51 @@ logger.info("정보 메시지", { context: "추가 정보" });
 logger.error("에러 발생", { error: err });
 
 // 로그 파일 위치: ~/.moonbot/logs/
+```
+
+---
+
+## 7. 보안 아키텍처
+
+### 7.1 SSRF 방어 (SsrfGuard)
+
+HTTP 도구는 SSRF(Server-Side Request Forgery) 공격을 방지합니다.
+
+```typescript
+// src/tools/http/SsrfGuard.ts
+- IPv4 내부망 차단: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8
+- IPv6 내부망 차단: ::1, fe80::/10 (link-local), fc00::/7 (unique local), ff00::/8 (multicast)
+- IPv4-mapped IPv6 차단: ::ffff:x.x.x.x 형식의 내부 IP
+- DNS Rebinding 방어: resolveAndCheck()로 DNS 해석 후 IP 검증
+```
+
+### 7.2 명령어 살균 (CommandSanitizer)
+
+시스템 명령 도구는 allowlist/denylist 방식으로 위험한 명령을 차단합니다.
+
+```typescript
+// src/tools/desktop/CommandSanitizer.ts
+- Allowlist: git, pnpm, npm, node, python 등 허용 명령
+- Denylist: rm -rf, curl|sh, sudo, chmod 777 등 위험 패턴
+```
+
+### 7.3 경로 검증 (PathValidator)
+
+파일 도구는 디렉토리 탈출 공격을 방지합니다.
+
+```typescript
+// src/tools/filesystem/PathValidator.ts
+- 경로 정규화: path.normalize()로 ".." 해결
+- 경계 검증: workspace 외부 접근 차단
+```
+
+### 7.4 인증 (Gateway)
+
+```typescript
+// src/gateway/server.ts
+- SHA-256 토큰 기반 인증
+- timingSafeEqual()로 타이밍 공격 방지
+- Rate Limiting: IP당 + 토큰당 요청 제한
 ```
 
 ---
