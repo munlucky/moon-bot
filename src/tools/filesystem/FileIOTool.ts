@@ -243,28 +243,48 @@ export function createFileGlobTool(): ToolSpec<FileGlobInput, { paths: string[] 
       const startTime = Date.now();
 
       try {
-        // Simple glob pattern matching
-        const parts = input.pattern.split(path.sep);
-        const baseDir = parts[0] === "**" ? ctx.workspaceRoot : path.join(ctx.workspaceRoot, parts[0]);
+        // Glob patterns always use '/' as separator (cross-platform standard)
+        // Split by '/' instead of path.sep to work correctly on Windows
+        const parts = input.pattern.split("/");
 
-        // Get all files recursively
+        // Determine base directory for search
+        let baseDir: string;
+        if (parts[0] === "**" || parts[0] === "") {
+          // "**/" or leading "/" means start from workspace root
+          baseDir = ctx.workspaceRoot;
+        } else if (parts.length === 1 && !parts[0].includes("/")) {
+          // Simple pattern like "*.txt" - search from workspace root
+          baseDir = ctx.workspaceRoot;
+        } else {
+          // Pattern with directory prefix like "src/**/*.ts"
+          // Convert the first segment to a platform-specific path
+          baseDir = path.join(ctx.workspaceRoot, parts[0]);
+        }
+
+        // Normalize the baseDir to an absolute path
+        // This ensures getFilesRecursively can find the directory correctly
+        baseDir = path.resolve(baseDir);
+
+        // Get all files recursively from base directory
         const allFiles = await getFilesRecursively(baseDir, baseDir);
+
+        // Normalize paths to use '/' for pattern matching (glob standard)
+        // This ensures patterns work consistently across platforms
+        const normalizeForGlob = (p: string): string => {
+          return p.replace(/\\/g, "/");
+        };
 
         // Filter by pattern
         const matched = allFiles.filter((filePath) => {
-          const relativePath = path.relative(ctx.workspaceRoot, filePath);
+          const relativePath = normalizeForGlob(path.relative(ctx.workspaceRoot, filePath));
 
           // Convert glob pattern to regex
+          // Pattern uses '/' as separator (glob standard)
           let patternRegex = input.pattern
-            .replace(/\./g, "\\.")
-            .replace(/\*\*/g, ".*")
-            .replace(/\*/g, "[^/]*")
-            .replace(/\?/g, ".");
-
-          // Handle platform-specific path separators
-          if (path.sep === "\\") {
-            patternRegex = patternRegex.replace(/\//g, "\\\\");
-          }
+            .replace(/\./g, "\\.")     // Literal dots
+            .replace(/\*\*/g, ".*")     // ** matches any number of directories
+            .replace(/\*/g, "[^/]*")    // * matches any characters except /
+            .replace(/\?/g, ".");       // ? matches any single character
 
           const regex = new RegExp(`^${patternRegex}$`);
           return regex.test(relativePath);

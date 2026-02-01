@@ -330,9 +330,6 @@ describe("FileIOTool", () => {
     });
 
     it("T17: should match files with glob pattern at workspace root", async () => {
-      // KNOWN ISSUE: Windows glob pattern matching has issues
-      // The implementation splits pattern by path.sep (\), but glob patterns use /
-      // This causes "*.txt" to be treated as a directory name instead of a pattern
       const realContext: ToolContext = {
         workspaceRoot: tempDir,
         policy: { maxBytes: 1024 * 1024, timeoutMs: 5000 },
@@ -340,49 +337,87 @@ describe("FileIOTool", () => {
         sessionId: "test-session",
       };
 
+      // For integration tests, use actual fs module
+      // We need to call the actual fs.readdir to read real files
+      const actualFs = await vi.importActual<typeof import("fs/promises")>("fs/promises");
+
+      // Mock readdir to use actual fs for tempDir
+      mockReaddir.mockImplementation(async (dirPath: string) => {
+        // For the temp directory, use real fs
+        if (dirPath.includes("test-temp-glob")) {
+          return actualFs.readdir(dirPath, { withFileTypes: true });
+        }
+        // For other paths, return empty
+        return [];
+      });
+
+      // Mock stat to use actual fs for tempDir
+      mockStat.mockImplementation(async (filePath: string) => {
+        if (filePath.includes("test-temp-glob")) {
+          return actualFs.stat(filePath);
+        }
+        return { size: 100 } as any;
+      });
+
       // Verify files exist
       const fs = await import("fs/promises");
+      const path = await import("path");
       const files = await fs.readdir(tempDir);
       expect(files).toContain("test.txt");
       expect(files).toContain("other.txt");
 
-      // Run glob - may return empty due to Windows path handling bug
+      // Run glob - should match .txt files
       const result = await globTool.run({ pattern: "*.txt" }, realContext);
 
-      // Tool should complete without error
       expect(result.ok).toBe(true);
       expect(result.data?.paths).toBeDefined();
-
-      // NOTE: On Windows, glob patterns without directory prefix don't work
-      // due to path.sep (\) vs glob separator (/) mismatch in implementation
-      // This is a known bug in FileIOTool.ts glob implementation
+      // Should find test.txt and other.txt
+      expect(result.data?.paths.length).toBeGreaterThanOrEqual(2);
+      expect(result.data?.paths).toContain("test.txt");
+      expect(result.data?.paths).toContain("other.txt");
     });
 
     it("T18: should match files in subdirectories", async () => {
-      // KNOWN ISSUE: Windows glob pattern matching has issues
-      // Even patterns with directory prefixes don't work properly
       const realContext: ToolContext = {
         workspaceRoot: tempDir,
         policy: { maxBytes: 1024 * 1024, timeoutMs: 5000 },
         userId: "test-user",
         sessionId: "test-session",
       };
+
+      // For integration tests, use actual fs module
+      const actualFs = await vi.importActual<typeof import("fs/promises")>("fs/promises");
+      const path = await import("path");
+
+      // Mock readdir to use actual fs for tempDir
+      mockReaddir.mockImplementation(async (dirPath: string) => {
+        if (dirPath.includes("test-temp-glob")) {
+          return actualFs.readdir(dirPath, { withFileTypes: true });
+        }
+        return [];
+      });
+
+      // Mock stat to use actual fs for tempDir
+      mockStat.mockImplementation(async (filePath: string) => {
+        if (filePath.includes("test-temp-glob")) {
+          return actualFs.stat(filePath);
+        }
+        return { size: 100 } as any;
+      });
 
       // Verify file exists
       const fs = await import("fs/promises");
       const srcFiles = await fs.readdir(`${tempDir}/src`);
       expect(srcFiles).toContain("file.ts");
 
-      // Run glob - may return empty due to Windows path handling bug
+      // Run glob with directory prefix
       const result = await globTool.run({ pattern: "src/file.ts" }, realContext);
 
-      // Tool should complete without error
       expect(result.ok).toBe(true);
       expect(result.data?.paths).toBeDefined();
-
-      // NOTE: Glob patterns don't work on Windows due to path.sep vs / mismatch
-      // This is a known bug in FileIOTool.ts glob implementation
-      // TODO: Fix FileIOTool.ts to handle glob patterns with / separator on Windows
+      // paths use platform-specific separator from path.relative()
+      const expectedPath = path.join("src", "file.ts");
+      expect(result.data?.paths).toContain(expectedPath);
     });
 
     it("T19: should return empty array when no matches", async () => {
