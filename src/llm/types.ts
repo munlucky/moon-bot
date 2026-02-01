@@ -38,3 +38,17 @@ export interface ChatCompletionResponse {
 // Re-export ToolCallParser types for convenience
 export { ToolCallParser, TOOL_ALIASES } from "./ToolCallParser.js";
 export type { ToolCallParser as ToolCallParserClass } from "./ToolCallParser.js";
+
+// Re-export SystemPromptBuilder types
+export {
+  SystemPromptBuilder,
+  DEFAULT_SAFETY_POLICY,
+} from "./SystemPromptBuilder.js";
+export type {
+  SystemPromptConfig,
+  SafetyPolicy,
+  WorkspaceConfig,
+  RuntimeInfo,
+  UserInfo,
+  ExtensionConfig,
+} from "./SystemPromptBuilder.js";
