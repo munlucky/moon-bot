@@ -4,6 +4,33 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "child_process";
 import type { EventEmitter } from "events";
 
+// PTY configuration constants
+const DEFAULT_PTY_NAME = "xterm-256color";
+const DEFAULT_PTY_COLS = 80;
+const DEFAULT_PTY_ROWS = 24;
+const DEFAULT_WINDOWS_SHELL = "cmd.exe";
+const DEFAULT_UNIX_SHELL = "/bin/sh";
+const DEFAULT_SIGNAL_NUMBER = 15; // SIGTERM
+
+// Signal numbers
+const SIGNAL_NUMBERS: Record<string, number> = {
+  SIGTERM: 15,
+  SIGKILL: 9,
+  SIGINT: 2,
+  SIGHUP: 1,
+  SIGQUIT: 3,
+  SIGABRT: 6,
+  SIGALRM: 14,
+  SIGUSR1: 10,
+  SIGUSR2: 12,
+  SIGTRAP: 5,
+  SIGPIPE: 13,
+  SIGSTOP: 19,
+  SIGTSTP: 20,
+  SIGCONT: 18,
+  SIGCHLD: 17,
+};
+
 /**
  * Common interface for both PTY and ChildProcess handles
  */
@@ -88,9 +115,9 @@ export async function isPtyAvailable(): Promise<boolean> {
  */
 export function getDefaultShell(): string {
   if (process.platform === "win32") {
-    return process.env.COMSPEC || "cmd.exe";
+    return process.env.COMSPEC || DEFAULT_WINDOWS_SHELL;
   }
-  return process.env.SHELL || "/bin/sh";
+  return process.env.SHELL || DEFAULT_UNIX_SHELL;
 }
 
 /**
@@ -120,8 +147,8 @@ function spawnWithPty(
   command: string[],
   cwd: string,
   env: Record<string, string>,
-  cols: number = 80,
-  rows: number = 24
+  cols: number = DEFAULT_PTY_COLS,
+  rows: number = DEFAULT_PTY_ROWS
 ): WrappedProcess {
   if (!nodePty) {
     throw new Error("node-pty not available");
@@ -129,7 +156,7 @@ function spawnWithPty(
 
   const [cmd, ...args] = command;
   const pty = nodePty.spawn(cmd, args, {
-    name: "xterm-256color",
+    name: DEFAULT_PTY_NAME,
     cols,
     rows,
     cwd,
@@ -254,15 +281,10 @@ function spawnWithChildProcess(
  * Convert signal name to number for PTY
  */
 function signalToNumber(signal?: NodeJS.Signals): number {
-  if (!signal) {return 15;} // SIGTERM
-  const signals: Record<string, number> = {
-    SIGTERM: 15,
-    SIGKILL: 9,
-    SIGINT: 2,
-    SIGHUP: 1,
-    SIGQUIT: 3,
-  };
-  return signals[signal] ?? 15;
+  if (!signal) {
+    return DEFAULT_SIGNAL_NUMBER;
+  }
+  return SIGNAL_NUMBERS[signal] ?? DEFAULT_SIGNAL_NUMBER;
 }
 
 /**

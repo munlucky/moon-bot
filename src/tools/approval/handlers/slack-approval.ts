@@ -13,6 +13,9 @@ import type {
 } from "../types.js";
 import type { SlackAdapter } from "../../../channels/slack.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
+import { truncateString, formatInputForDisplay } from "./formatUtils.js";
+
+const APPROVAL_BUTTON_PREFIX = "approval_";
 
 /**
  * Create approval button elements for Slack Block Kit.
@@ -27,7 +30,7 @@ export function createApprovalButtons(requestId: string): ActionsBlock["elements
         emoji: true,
       },
       style: "primary",
-      action_id: `approval_${requestId}_approve`,
+      action_id: `${APPROVAL_BUTTON_PREFIX}${requestId}_approve`,
     },
     {
       type: "button",
@@ -37,7 +40,7 @@ export function createApprovalButtons(requestId: string): ActionsBlock["elements
         emoji: true,
       },
       style: "danger",
-      action_id: `approval_${requestId}_reject`,
+      action_id: `${APPROVAL_BUTTON_PREFIX}${requestId}_reject`,
     },
   ];
 }
@@ -49,12 +52,11 @@ export function createApprovalButtons(requestId: string): ActionsBlock["elements
 export function parseButtonActionId(
   actionId: string
 ): { requestId: string; action: "approve" | "reject" } | null {
-  const prefix = "approval_";
-  if (!actionId.startsWith(prefix)) {
+  if (!actionId.startsWith(APPROVAL_BUTTON_PREFIX)) {
     return null;
   }
 
-  const parts = actionId.slice(prefix.length).split("_");
+  const parts = actionId.slice(APPROVAL_BUTTON_PREFIX.length).split("_");
   if (parts.length !== 2) {
     return null;
   }
@@ -133,46 +135,6 @@ export function formatApprovalBlocks(request: ApprovalRequest): SlackBlockMessag
     blocks,
     fallbackText: "Tool Execution Approval Required",
   };
-}
-
-/**
- * Format tool input for display in Slack message.
- * Truncates long inputs to prevent message overflow.
- */
-function formatInputForDisplay(input: unknown): string {
-  if (input === null || input === undefined) {
-    return "`(empty)`";
-  }
-
-  if (typeof input === "string") {
-    return truncateString(input, 500);
-  }
-
-  if (typeof input === "object") {
-    // For system.run, extract command and cwd
-    const obj = input as Record<string, unknown>;
-    if ("argv" in obj) {
-      const argv = obj.argv as string | string[];
-      const command = Array.isArray(argv) ? argv.join(" ") : argv;
-      const cwd = obj.cwd as string | undefined;
-      const result = `\`\`\`\n${command}${cwd ? `\n(cwd: ${cwd})` : ""}\n\`\`\``;
-      return truncateString(result, 500);
-    }
-    const json = JSON.stringify(input, null, 2);
-    return truncateString(`\`\`\`json\n${json}\n\`\`\``, 500);
-  }
-
-  return `\`\`\`${String(input)}\`\`\``;
-}
-
-/**
- * Truncate a string to a maximum length.
- */
-function truncateString(str: string, maxLength: number): string {
-  if (str.length <= maxLength) {
-    return str;
-  }
-  return str.slice(0, maxLength - 3) + "...";
 }
 
 /**

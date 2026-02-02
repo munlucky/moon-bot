@@ -40,6 +40,29 @@ import {
 } from "./nodes/index.js";
 import { createNodesTools } from "./nodes/NodesTool.js";
 
+// Constants
+const DEFAULT_BROWSER_MAX_PAGES = 5;
+const DEFAULT_TOOL_PROFILE: ToolProfile = "full";
+const DEFAULT_RUNTIME_TIMEOUT_MS = 30000;
+const DEFAULT_MAX_CONCURRENT = 10;
+const MAX_OUTPUT_LINES = 1000;
+const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const MAX_SESSIONS_PER_USER_PROCESS = 3;
+const PAIRING_CODE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+const MAX_NODES_PER_USER = 5;
+const DEFAULT_CLAUDE_TIMEOUT = 1800; // 30 minutes
+const MAX_CLAUDE_SESSIONS_PER_USER = 2;
+const MAX_OUTPUT_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_ARGV_LENGTH = 10000;
+const DEFAULT_NODE_TIMEOUT_MS = 30000; // 30 seconds
+const MAX_NODE_RETRIES = 2;
+const INITIAL_RETRY_DELAY_MS = 1000;
+const MAX_RETRY_DELAY_MS = 10000;
+const RETRY_BACKOFF_MULTIPLIER = 2;
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
 /**
  * Extended Toolkit interface with additional resources for cleanup.
  * This is a separate interface (not extending Toolkit) to avoid type compatibility issues.
@@ -79,8 +102,8 @@ export class Toolkit {
       },
       {
         workspaceRoot: workspaceRoot ?? process.cwd(),
-        defaultTimeoutMs: 30000,
-        maxConcurrent: 10,
+        defaultTimeoutMs: DEFAULT_RUNTIME_TIMEOUT_MS,
+        maxConcurrent: DEFAULT_MAX_CONCURRENT,
         enableApprovals: true,
       }
     );
@@ -99,7 +122,7 @@ export class Toolkit {
    */
   async initializeBrowser(headless: boolean = true): Promise<void> {
     if (!this.browserTool) {
-      this.browserTool = new BrowserTool(5);
+      this.browserTool = new BrowserTool(DEFAULT_BROWSER_MAX_PAGES);
       await this.browserTool.initialize(headless);
     }
   }
@@ -176,7 +199,7 @@ export async function createGatewayTools(
 ): Promise<Toolkit> {
   const toolkit = new Toolkit(config);
   const workspaceRoot = options.workspaceRoot ?? process.cwd();
-  const profile = options.profile ?? "full";
+  const profile = options.profile ?? DEFAULT_TOOL_PROFILE;
 
   // Collect all candidate tools
   const candidateTools: ToolSpec[] = [];
@@ -208,7 +231,7 @@ export async function createGatewayTools(
   // Browser tools (only if explicitly enabled AND profile allows)
   const enableBrowser = options.enableBrowser && profile === "full";
   if (enableBrowser) {
-    const browserTool = new BrowserTool(5);
+    const browserTool = new BrowserTool(DEFAULT_BROWSER_MAX_PAGES);
     await browserTool.initialize(options.browserHeadless ?? true);
 
     candidateTools.push(...createBrowserTools(browserTool));
@@ -219,10 +242,10 @@ export async function createGatewayTools(
 
   // Process tools (for interactive terminal sessions)
   const processSessionManager = new ProcessSessionManager({
-    maxOutputLines: 1000,
-    maxLogSize: 10 * 1024 * 1024, // 10MB
-    idleTimeoutMs: 30 * 60 * 1000, // 30 minutes
-    maxSessionsPerUser: 3,
+    maxOutputLines: MAX_OUTPUT_LINES,
+    maxLogSize: MAX_LOG_SIZE,
+    idleTimeoutMs: IDLE_TIMEOUT_MS,
+    maxSessionsPerUser: MAX_SESSIONS_PER_USER_PROCESS,
   });
 
   candidateTools.push(
@@ -232,24 +255,24 @@ export async function createGatewayTools(
   // Nodes tools (for Node Companion integration)
   // Must be created before ClaudeCodeSessionManager
   const nodeSessionManager = new NodeSessionManager({
-    pairingCodeTtlMs: 5 * 60 * 1000, // 5 minutes
-    sessionTimeoutMs: 60 * 60 * 1000, // 1 hour
-    maxNodesPerUser: 5,
+    pairingCodeTtlMs: PAIRING_CODE_TTL_MS,
+    sessionTimeoutMs: SESSION_TIMEOUT_MS,
+    maxNodesPerUser: MAX_NODES_PER_USER,
   });
 
   const nodeCommandValidator = new NodeCommandValidator({
-    maxOutputSize: 10 * 1024 * 1024, // 10MB
-    maxArgvLength: 10000,
+    maxOutputSize: MAX_OUTPUT_SIZE,
+    maxArgvLength: MAX_ARGV_LENGTH,
   });
 
   // Create NodeExecutor for Claude Code integration
   const nodeExecutor = new NodeExecutor(nodeSessionManager, {
-    defaultTimeoutMs: 30000, // 30 seconds
+    defaultTimeoutMs: DEFAULT_NODE_TIMEOUT_MS,
     retry: {
-      maxRetries: 2,
-      initialDelayMs: 1000,
-      maxDelayMs: 10000,
-      backoffMultiplier: 2,
+      maxRetries: MAX_NODE_RETRIES,
+      initialDelayMs: INITIAL_RETRY_DELAY_MS,
+      maxDelayMs: MAX_RETRY_DELAY_MS,
+      backoffMultiplier: RETRY_BACKOFF_MULTIPLIER,
     },
   });
 
@@ -262,8 +285,8 @@ export async function createGatewayTools(
   const claudeCodeSessionManager = new ClaudeCodeSessionManager(
     processSessionManager,
     {
-      defaultTimeout: 1800, // 30 minutes
-      maxSessionsPerUser: 2,
+      defaultTimeout: DEFAULT_CLAUDE_TIMEOUT,
+      maxSessionsPerUser: MAX_CLAUDE_SESSIONS_PER_USER,
       nodeExecutor, // Pass NodeExecutor for screen capture integration
     }
   );
@@ -281,7 +304,7 @@ export async function createGatewayTools(
       // Silent: cleanup errors are not critical
     });
     nodeSessionManager.cleanupExpired();
-  }, 5 * 60 * 1000); // Every 5 minutes
+  }, CLEANUP_INTERVAL_MS);
 
   // Store session manager references for cleanup
   (toolkit as unknown as ToolkitWithResources).processSessionManager = processSessionManager;

@@ -8,6 +8,17 @@ import type {
 } from "../types.js";
 import type { DiscordAdapter } from "../../../channels/discord.js";
 import { createLogger, type Logger } from "../../../utils/logger.js";
+import { truncateString, formatInputForDisplay } from "./formatUtils.js";
+
+const BUTTON_TYPE = 2;
+const BUTTON_STYLE_SUCCESS = 3;
+const BUTTON_STYLE_DANGER = 4;
+const ACTION_ROW_TYPE = 1;
+const COLOR_YELLOW = 0xffaa00;
+const COLOR_GREEN = 0x00ff00;
+const COLOR_RED = 0xff0000;
+const APPROVAL_BUTTON_PREFIX = "approval_";
+const MAX_DISPLAY_LENGTH = 500;
 
 /**
  * Create approval button components for Discord.
@@ -15,16 +26,16 @@ import { createLogger, type Logger } from "../../../utils/logger.js";
 export function createApprovalButtons(requestId: string): DiscordButtonComponent[] {
   return [
     {
-      type: 2, // BUTTON
-      style: 3, // SUCCESS (green)
+      type: BUTTON_TYPE,
+      style: BUTTON_STYLE_SUCCESS,
       label: "✅ Approve",
-      custom_id: `approval_${requestId}_approve`,
+      custom_id: `${APPROVAL_BUTTON_PREFIX}${requestId}_approve`,
     },
     {
-      type: 2, // BUTTON
-      style: 4, // DANGER (red)
+      type: BUTTON_TYPE,
+      style: BUTTON_STYLE_DANGER,
       label: "❌ Reject",
-      custom_id: `approval_${requestId}_reject`,
+      custom_id: `${APPROVAL_BUTTON_PREFIX}${requestId}_reject`,
     },
   ];
 }
@@ -36,12 +47,11 @@ export function createApprovalButtons(requestId: string): DiscordButtonComponent
 export function parseButtonCustomId(
   customId: string
 ): { requestId: string; action: "approve" | "reject" } | null {
-  const prefix = "approval_";
-  if (!customId.startsWith(prefix)) {
+  if (!customId.startsWith(APPROVAL_BUTTON_PREFIX)) {
     return null;
   }
 
-  const parts = customId.slice(prefix.length).split("_");
+  const parts = customId.slice(APPROVAL_BUTTON_PREFIX.length).split("_");
   if (parts.length !== 2) {
     return null;
   }
@@ -68,7 +78,7 @@ export function formatApprovalEmbed(request: ApprovalRequest): DiscordEmbedMessa
   return {
     title: "🛡️ Tool Execution Approval Required",
     description: `A tool is requesting approval before execution.`,
-    color: 0xffaa00, // Yellow for pending
+    color: COLOR_YELLOW,
     fields: [
       {
         name: "Tool",
@@ -93,51 +103,11 @@ export function formatApprovalEmbed(request: ApprovalRequest): DiscordEmbedMessa
     ],
     components: [
       {
-        type: 1, // ACTION_ROW
+        type: ACTION_ROW_TYPE,
         components: createApprovalButtons(request.id),
       },
     ],
   };
-}
-
-/**
- * Format tool input for display in Discord message.
- * Truncates long inputs to prevent message overflow.
- */
-function formatInputForDisplay(input: unknown): string {
-  if (input === null || input === undefined) {
-    return "`(empty)`";
-  }
-
-  if (typeof input === "string") {
-    return truncateString(input, 500);
-  }
-
-  if (typeof input === "object") {
-    // For system.run, extract command and cwd
-    const obj = input as Record<string, unknown>;
-    if ("argv" in obj) {
-      const argv = obj.argv as string | string[];
-      const command = Array.isArray(argv) ? argv.join(" ") : argv;
-      const cwd = obj.cwd as string | undefined;
-      const result = `\`\`\`\n${command}${cwd ? `\n(cwd: ${cwd})` : ""}\n\`\`\``;
-      return truncateString(result, 500);
-    }
-    const json = JSON.stringify(input, null, 2);
-    return truncateString(`\`\`\`json\n${json}\n\`\`\``, 500);
-  }
-
-  return `\`\`\`${String(input)}\`\`\``;
-}
-
-/**
- * Truncate a string to a maximum length.
- */
-function truncateString(str: string, maxLength: number): string {
-  if (str.length <= maxLength) {
-    return str;
-  }
-  return str.slice(0, maxLength - 3) + "...";
 }
 
 /**
@@ -146,7 +116,7 @@ function truncateString(str: string, maxLength: number): string {
 export function formatApprovalUpdateEmbed(
   request: ApprovalRequest
 ): DiscordEmbedMessage {
-  const color = request.status === "approved" ? 0x00ff00 : 0xff0000; // Green or Red
+  const color = request.status === "approved" ? COLOR_GREEN : COLOR_RED;
   const statusEmoji = request.status === "approved" ? "✅" : "❌";
   const statusText =
     request.status === "approved"

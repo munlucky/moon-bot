@@ -5,6 +5,19 @@
 import type { NodeSessionManager } from "./NodeSessionManager.js";
 import type { NodeConnection } from "./types.js";
 
+// Error messages
+const ERR_NODE_NOT_FOUND = "NODE_NOT_FOUND: Node not found or access denied";
+const ERR_NODE_NOT_FOUND_CAPABLE = "NODE_NOT_FOUND: No screen capture capable node found. Pair a node with screen capture support first.";
+const ERR_NODE_CAPABILITY_REQUIRED = "NODE_CAPABILITY_REQUIRED: This node does not support";
+const ERR_NODE_NOT_AVAILABLE = "NODE_NOT_AVAILABLE: Node is";
+const ERR_RPC_NOT_AVAILABLE = "RPC_NOT_AVAILABLE: Gateway RPC sender not configured";
+const ERR_NODE_SESSION_ERROR = "NODE_SESSION_ERROR: Remote session did not return sessionId";
+const ERR_EXECUTOR_SHUTDOWN = "EXECUTOR_SHUTDOWN";
+const ERR_CONSENT_REQUIRED = "CONSENT_REQUIRED: Screen capture consent not granted. User must grant consent first.";
+
+// Time constants
+const MS_PER_SECOND = 1000;
+
 /**
  * RPC send function type for communicating with nodes
  * This avoids circular dependency with GatewayServer
@@ -292,7 +305,7 @@ export class NodeExecutor {
   ): void {
     const node = this.sessionManager.getNode(nodeId);
     if (!node || node.userId !== userId) {
-      throw new Error("NODE_NOT_FOUND: Node not found or access denied");
+      throw new Error(ERR_NODE_NOT_FOUND);
     }
 
     this.sessionManager.grantScreenCaptureConsent(nodeId, durationMs);
@@ -316,41 +329,37 @@ export class NodeExecutor {
     if (nodeId) {
       node = this.sessionManager.getNode(nodeId);
       if (!node || node.userId !== userId) {
-        throw new Error("NODE_NOT_FOUND: Node not found or access denied");
+        throw new Error(ERR_NODE_NOT_FOUND);
       }
     } else {
       node = this.sessionManager.getScreenCaptureCapableNode(userId);
     }
 
     if (!node) {
-      throw new Error(
-        "NODE_NOT_FOUND: No screen capture capable node found. Pair a node with screen capture support first."
-      );
+      throw new Error(ERR_NODE_NOT_FOUND_CAPABLE);
     }
 
     if (!node.capabilities.screenCapture) {
-      throw new Error("NODE_CAPABILITY_REQUIRED: This node does not support screen capture");
+      throw new Error(`${ERR_NODE_CAPABILITY_REQUIRED} screen capture`);
     }
 
     if (node.status !== "paired") {
-      throw new Error(`NODE_NOT_AVAILABLE: Node is ${node.status}`);
+      throw new Error(`${ERR_NODE_NOT_AVAILABLE} ${node.status}`);
     }
 
     // Check consent
     if (!this.sessionManager.hasScreenCaptureConsent(node.nodeId)) {
-      throw new Error(
-        "CONSENT_REQUIRED: Screen capture consent not granted. User must grant consent first."
-      );
+      throw new Error(ERR_CONSENT_REQUIRED);
     }
 
     // Check RPC sender is available
     if (!this.isRpcReady()) {
-      throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
+      throw new Error(ERR_RPC_NOT_AVAILABLE);
     }
 
     const rpcSender = this.rpcSender;
     if (!rpcSender) {
-      throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
+      throw new Error(ERR_RPC_NOT_AVAILABLE);
     }
 
     const timeout = timeoutMs ?? this.config.defaultTimeoutMs;
@@ -401,21 +410,21 @@ export class NodeExecutor {
     );
 
     if (!node.capabilities.commandExec) {
-      throw new Error("NODE_CAPABILITY_REQUIRED: This node does not support command execution");
+      throw new Error(`${ERR_NODE_CAPABILITY_REQUIRED} command execution`);
     }
 
     if (node.status !== "paired") {
-      throw new Error(`NODE_NOT_AVAILABLE: Node is ${node.status}`);
+      throw new Error(`${ERR_NODE_NOT_AVAILABLE} ${node.status}`);
     }
 
     // Check RPC sender is available
     if (!this.isRpcReady()) {
-      throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
+      throw new Error(ERR_RPC_NOT_AVAILABLE);
     }
 
     const rpcSender = this.rpcSender;
     if (!rpcSender) {
-      throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
+      throw new Error(ERR_RPC_NOT_AVAILABLE);
     }
 
     const timeout = options.timeoutMs ?? this.config.defaultTimeoutMs;
@@ -575,21 +584,21 @@ export class NodeExecutor {
     );
 
     if (!node.capabilities.commandExec) {
-      throw new Error("NODE_CAPABILITY_REQUIRED: This node does not support command execution");
+      throw new Error(`${ERR_NODE_CAPABILITY_REQUIRED} command execution`);
     }
 
     if (node.status !== "paired") {
-      throw new Error(`NODE_NOT_AVAILABLE: Node is ${node.status}`);
+      throw new Error(`${ERR_NODE_NOT_AVAILABLE} ${node.status}`);
     }
 
     // Check RPC sender is available
     if (!this.isRpcReady()) {
-      throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
+      throw new Error(ERR_RPC_NOT_AVAILABLE);
     }
 
     const rpcSender = this.rpcSender;
     if (!rpcSender) {
-      throw new Error("RPC_NOT_AVAILABLE: Gateway RPC sender not configured");
+      throw new Error(ERR_RPC_NOT_AVAILABLE);
     }
 
     const timeout = options.timeoutMs ?? this.config.defaultTimeoutMs;

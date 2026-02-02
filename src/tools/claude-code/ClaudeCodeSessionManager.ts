@@ -13,6 +13,28 @@ import type { NodeExecutor } from "../nodes/NodeExecutor.js";
 
 const execAsync = promisify(exec);
 
+// Error codes
+const ERR_NODE_EXECUTOR_NOT_AVAILABLE = "NODE_EXECUTOR_NOT_AVAILABLE: NodeExecutor not configured";
+const ERR_NODE_NOT_FOUND_CAPABLE = "NODE_NOT_FOUND: No screen capture capable node found. Pair a Node Companion with screen capture support first.";
+const ERR_NODE_NOT_FOUND_GET = "NODE_NOT_FOUND: Failed to get screen capture node";
+const ERR_NODE_NOT_FOUND_ACCESS = "NODE_NOT_FOUND: Node not found or access denied";
+const ERR_CONSENT_REQUIRED = "CONSENT_REQUIRED: Screen capture consent not granted. User must grant consent via nodes.consent.grant before using screen capture mode.";
+const ERR_NODE_CAPABILITY_REQUIRED = "NODE_CAPABILITY_REQUIRED: This node does not support command execution";
+const ERR_NODE_NOT_AVAILABLE = "NODE_NOT_AVAILABLE";
+const ERR_NODE_SESSION_FAILED = "NODE_SESSION_FAILED";
+
+// Common paths
+const COMMON_CLAUDE_PATHS = [
+  "/usr/local/bin/claude",
+  "/usr/bin/claude",
+  "${HOME}/.local/bin/claude",
+  "${HOME}/.npm-global/bin/claude",
+] as const;
+
+// Time constants
+const MS_PER_SECOND = 1000;
+const MS_PER_MINUTE = 60 * MS_PER_SECOND;
+
 /**
  * Claude Code session metadata
  */
@@ -99,14 +121,15 @@ export class ClaudeCodeSessionManager {
       };
     } catch {
       // Try common paths
-      const commonPaths = [
+      const home = process.env.HOME ?? "";
+      const searchPaths = [
         "/usr/local/bin/claude",
         "/usr/bin/claude",
-        `${process.env.HOME}/.local/bin/claude`,
-        `${process.env.HOME}/.npm-global/bin/claude`,
+        `${home}/.local/bin/claude`,
+        `${home}/.npm-global/bin/claude`,
       ];
 
-      for (const path of commonPaths) {
+      for (const path of searchPaths) {
         if (existsSync(path)) {
           try {
             await execAsync(`${path} --version`);
@@ -228,31 +251,23 @@ export class ClaudeCodeSessionManager {
     now: number = Date.now()
   ): Promise<ClaudeCodeSession> {
     if (!this.nodeExecutor) {
-      throw new Error(
-        "NODE_EXECUTOR_NOT_AVAILABLE: NodeExecutor not configured. Cannot use screen capture mode."
-      );
+      throw new Error(`${ERR_NODE_EXECUTOR_NOT_AVAILABLE}. Cannot use screen capture mode.`);
     }
 
     // Check if screen capture capable node exists
     if (!this.hasScreenCaptureAvailable(userId)) {
-      throw new Error(
-        "NODE_NOT_FOUND: No screen capture capable node found. " +
-          "Pair a Node Companion with screen capture support first."
-      );
+      throw new Error(ERR_NODE_NOT_FOUND_CAPABLE);
     }
 
     // Get the node for screen capture
     const nodeInfo = this.getScreenCaptureNode(userId);
     if (!nodeInfo) {
-      throw new Error("NODE_NOT_FOUND: Failed to get screen capture node");
+      throw new Error(ERR_NODE_NOT_FOUND_GET);
     }
 
     // Check consent
     if (!this.hasScreenCaptureConsent(userId, nodeInfo.nodeId)) {
-      throw new Error(
-        "CONSENT_REQUIRED: Screen capture consent not granted. " +
-          "User must grant consent via nodes.consent.grant before using screen capture mode."
-      );
+      throw new Error(ERR_CONSENT_REQUIRED);
     }
 
     // Start interactive PTY session on the remote node
@@ -266,7 +281,7 @@ export class ClaudeCodeSessionManager {
 
     if (!remoteResult.success || remoteResult.status === "failed") {
       throw new Error(
-        `NODE_SESSION_FAILED: Failed to start interactive session on node: ${remoteResult.error || "Unknown error"}`
+        `${ERR_NODE_SESSION_FAILED}: Failed to start interactive session on node: ${remoteResult.error || "Unknown error"}`
       );
     }
 
@@ -731,7 +746,7 @@ export class ClaudeCodeSessionManager {
     durationMs?: number
   ): void {
     if (!this.nodeExecutor) {
-      throw new Error("NODE_EXECUTOR_NOT_AVAILABLE: NodeExecutor not configured");
+      throw new Error(ERR_NODE_EXECUTOR_NOT_AVAILABLE);
     }
     this.nodeExecutor.grantScreenCaptureConsent(userId, nodeId, durationMs);
   }
@@ -755,7 +770,7 @@ export class ClaudeCodeSessionManager {
     format: "png";
   }> {
     if (!this.nodeExecutor) {
-      throw new Error("NODE_EXECUTOR_NOT_AVAILABLE: NodeExecutor not configured");
+      throw new Error(ERR_NODE_EXECUTOR_NOT_AVAILABLE);
     }
     const result = await this.nodeExecutor.requestScreenCapture(
       userId,
