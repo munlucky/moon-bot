@@ -51,6 +51,7 @@ export class GatewayAuthenticator {
    */
   validateToken(token: string): void {
     if (!this.authConfig) {
+      this.logger.debug("Authentication bypassed: no auth config");
       return;
     }
 
@@ -63,6 +64,7 @@ export class GatewayAuthenticator {
     }
 
     if (!this.rateLimiter.checkTokenLimit(token)) {
+      this.logger.warn("Authentication rate limit exceeded", { tokenPrefix: token.slice(0, 8) });
       this.throwAuthError(
         "Rate limit exceeded",
         AuthErrorCode.RATE_LIMITED,
@@ -71,12 +73,15 @@ export class GatewayAuthenticator {
     }
 
     if (!this.isValidToken(token)) {
+      this.logger.warn("Authentication failed: invalid token", { tokenPrefix: token.slice(0, 8) });
       this.throwAuthError(
         "Authentication failed",
         AuthErrorCode.INVALID_TOKEN,
         "Invalid token attempt"
       );
     }
+
+    this.logger.debug("Authentication successful", { tokenPrefix: token.slice(0, 8) });
   }
 
   /**
@@ -108,6 +113,10 @@ export class GatewayAuthenticator {
         }
       } catch {
         // Length mismatch: continue checking (timing-safe)
+        this.logger.debug("Token length mismatch during validation", {
+          expectedLength: validToken.length,
+          actualLength: token.length,
+        });
       }
     }
 

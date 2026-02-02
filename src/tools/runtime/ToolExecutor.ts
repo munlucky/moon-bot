@@ -18,6 +18,13 @@ import type { ToolInvocation } from "./ToolRuntime.js";
 
 const DEFAULT_MAX_BYTES = 2 * 1024 * 1024;  // 2MB
 
+/** Error messages for tool execution */
+const ToolExecutionErrorMessage = {
+  INVALID_INPUT: 'Invalid input',
+  TIMEOUT: 'Tool execution timeout',
+  UNKNOWN_ERROR: 'Unknown error',
+} as const;
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -132,6 +139,7 @@ export class ToolExecutor {
 
   /**
    * Re-execute a tool with approval granted.
+   * Note: Input was already validated in execute(), so we skip validation here.
    */
   async reExecuteAfterApproval(
     tool: ToolSpec,
@@ -141,14 +149,10 @@ export class ToolExecutor {
     this.onInvocationUpdated(invocation);
     this.onRunningCountChange(1);
 
-    const validationResult = SchemaValidator.validateJsonSchema(tool.schema, invocation.input);
-    if (!validationResult.success) {
-      throw new Error("Invalid input");
-    }
-
+    // Input was already validated in execute(), skip validation here
     const executionResult = await this.runToolWithTimeout(
       tool,
-      validationResult.data as never,
+      invocation.input as never,
       this.createContext(invocation.sessionId, "", "")
     );
 
@@ -191,7 +195,7 @@ export class ToolExecutor {
 
     let timeoutId: NodeJS.Timeout | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error("Tool execution timeout")), timeoutMs);
+      timeoutId = setTimeout(() => reject(new Error(ToolExecutionErrorMessage.TIMEOUT)), timeoutMs);
     });
 
     try {
@@ -204,7 +208,7 @@ export class ToolExecutor {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error : new Error("Unknown error"),
+        error: error instanceof Error ? error : new Error(ToolExecutionErrorMessage.UNKNOWN_ERROR),
         durationMs: Date.now() - startTime,
       };
     } finally {

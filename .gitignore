@@ -27,3 +27,4 @@ config.json
 coverage/
 output-patch.yaml
 moonshot-analysis.yaml
+context.md

@@ -20,8 +20,21 @@ const NodeErrorCode = {
   SHUTDOWN: 'COMMUNICATOR_SHUTDOWN',
 } as const;
 
+/** Error messages for node communication */
+const NodeErrorMessage = {
+  UNREACHABLE: 'Unable to send message to node',
+  NOT_FOUND: 'Node not found or not paired',
+  NOT_AVAILABLE_PREFIX: 'Node is',
+} as const;
+
 /** Default timeout for node requests (30 seconds) */
 const DEFAULT_TIMEOUT_MS = 30000;
+
+/** Default TTL for pending requests cleanup (10 minutes) */
+const DEFAULT_PENDING_TTL_MS = 600000;
+
+/** Default cleanup interval for pending requests (5 minutes) */
+const DEFAULT_CLEANUP_INTERVAL_MS = 300000;
 
 /**
  * Pending request with timeout and callbacks.
@@ -37,6 +50,8 @@ export interface NodeCommunicatorDeps {
   nodeSessionManager: NodeSessionManager;
   getSockets: () => Map<string, WebSocket>;
   logger: Logger;
+  pendingTtlMs?: number;
+  cleanupIntervalMs?: number;
 }
 
 export class NodeCommunicator {
@@ -44,11 +59,16 @@ export class NodeCommunicator {
   private getSockets: () => Map<string, WebSocket>;
   private logger: Logger;
   private pendingRequests = new Map<string, PendingRequest>();
+  private pendingRequestTimestamps = new Map<string, number>(); // Track creation time
+  private cleanupInterval: NodeJS.Timeout | null = null;
+  private readonly pendingTtlMs: number;
 
   constructor(deps: NodeCommunicatorDeps) {
     this.nodeSessionManager = deps.nodeSessionManager;
     this.getSockets = deps.getSockets;
     this.logger = deps.logger;
+    this.pendingTtlMs = deps.pendingTtlMs ?? DEFAULT_PENDING_TTL_MS;
+    this.startCleanupInterval(deps.cleanupIntervalMs ?? DEFAULT_CLEANUP_INTERVAL_MS);
   }
 
   /**
@@ -87,7 +107,7 @@ export class NodeCommunicator {
     const request = { jsonrpc: "2.0", id: correlationId, method, params };
 
     if (!this.sendToNode(nodeId, request)) {
-      throw new Error(`${NodeErrorCode.UNREACHABLE}: Unable to send message to node`);
+      throw new Error(`${NodeErrorCode.UNREACHABLE}: ${NodeErrorMessage.UNREACHABLE}`);
     }
 
     return this.createPendingRequest(correlationId, nodeId, timeoutMs);
@@ -107,6 +127,7 @@ export class NodeCommunicator {
 
     clearTimeout(pending.timeout);
     this.pendingRequests.delete(id);
+    this.pendingRequestTimestamps.delete(id);
 
     if (error) {
       pending.reject(new Error(error.message));
@@ -132,7 +153,7 @@ export class NodeCommunicator {
   }
 
   /**
-   * Clean up all pending requests.
+   * Clean up all pending requests and stop cleanup interval.
    */
   shutdown(): void {
     const error = new Error(`${NodeErrorCode.SHUTDOWN}: Node communicator shutting down`);
@@ -140,6 +161,13 @@ export class NodeCommunicator {
       pending.reject(error);
       clearTimeout(pending.timeout);
       this.pendingRequests.delete(id);
+    }
+
+    this.pendingRequestTimestamps.clear();
+
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
     }
   }
 
@@ -169,10 +197,10 @@ export class NodeCommunicator {
   private ensureNodeAvailable(nodeId: string): void {
     const node = this.nodeSessionManager.getNode(nodeId);
     if (!node) {
-      throw new Error(`${NodeErrorCode.NOT_FOUND}: Node not found or not paired`);
+      throw new Error(`${NodeErrorCode.NOT_FOUND}: ${NodeErrorMessage.NOT_FOUND}`);
     }
     if (node.status !== "paired") {
-      throw new Error(`${NodeErrorCode.NOT_AVAILABLE}: Node is ${node.status}`);
+      throw new Error(`${NodeErrorCode.NOT_AVAILABLE}: ${NodeErrorMessage.NOT_AVAILABLE_PREFIX} ${node.status}`);
     }
   }
 
@@ -184,10 +212,12 @@ export class NodeCommunicator {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(correlationId);
+        this.pendingRequestTimestamps.delete(correlationId);
         reject(new Error(`${NodeErrorCode.TIMEOUT}: No response after ${timeoutMs}ms`));
       }, timeoutMs);
 
       this.pendingRequests.set(correlationId, { resolve, reject, timeout, nodeId });
+      this.pendingRequestTimestamps.set(correlationId, Date.now());
     });
   }
 
@@ -201,7 +231,44 @@ export class NodeCommunicator {
         pending.reject(error);
         clearTimeout(pending.timeout);
         this.pendingRequests.delete(id);
+        this.pendingRequestTimestamps.delete(id);
       }
+    }
+  }
+
+  /**
+   * Start the automatic cleanup interval for stale pending requests.
+   * @private
+   */
+  private startCleanupInterval(intervalMs: number): void {
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupStaleRequests();
+    }, intervalMs);
+  }
+
+  /**
+   * Clean up stale pending requests that have exceeded TTL.
+   * @private
+   */
+  private cleanupStaleRequests(): void {
+    const cutoff = Date.now() - this.pendingTtlMs;
+    let removedCount = 0;
+
+    for (const [correlationId, timestamp] of this.pendingRequestTimestamps.entries()) {
+      if (timestamp < cutoff) {
+        const pending = this.pendingRequests.get(correlationId);
+        if (pending) {
+          clearTimeout(pending.timeout);
+          pending.reject(new Error(`${NodeErrorCode.TIMEOUT}: Request stale after ${this.pendingTtlMs}ms`));
+          this.pendingRequests.delete(correlationId);
+        }
+        this.pendingRequestTimestamps.delete(correlationId);
+        removedCount++;
+      }
+    }
+
+    if (removedCount > 0) {
+      this.logger.debug("Cleaned up stale pending requests", { count: removedCount });
     }
   }
 }

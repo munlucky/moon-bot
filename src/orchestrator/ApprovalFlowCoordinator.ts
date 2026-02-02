@@ -15,6 +15,12 @@ import type { TaskResponse, Task } from "../types/index.js";
 type ApprovalCallback = (event: ApprovalRequestEvent) => void;
 type ApprovalResolvedCallback = (event: ApprovalResolvedEvent) => void;
 
+/** Default TTL for pending approvals (1 hour) */
+const DEFAULT_PENDING_TTL_MS = 3600000;
+
+/** Default cleanup interval for pending approvals (5 minutes) */
+const DEFAULT_CLEANUP_INTERVAL_MS = 300000;
+
 /** Korean message constants for approval flow */
 const ApprovalMessages = {
   REQUESTED: (toolId: string) => `승인 필요: 도구 '${toolId}' 실행을 위한 승인이 필요합니다.`,
@@ -53,6 +59,8 @@ export interface ApprovalFlowCoordinatorDeps {
   responseCallback: ResponseCallback;
   resumeCallback: ResumeCallback;
   cleanupCallback: CleanupCallback;
+  pendingTtlMs?: number;
+  cleanupIntervalMs?: number;
 }
 
 export class ApprovalFlowCoordinator {
@@ -65,6 +73,8 @@ export class ApprovalFlowCoordinator {
   private approvalCallbacks: Set<ApprovalCallback> = new Set();
   private approvalResolvedCallbacks: Set<ApprovalResolvedCallback> = new Set();
   private pendingApprovals: Map<string, PendingApproval> = new Map();
+  private cleanupInterval: NodeJS.Timeout | null = null;
+  private readonly pendingTtlMs: number;
 
   constructor(deps: ApprovalFlowCoordinatorDeps) {
     this.toolRuntime = deps.toolRuntime;
@@ -73,6 +83,8 @@ export class ApprovalFlowCoordinator {
     this.responseCallback = deps.responseCallback;
     this.resumeCallback = deps.resumeCallback;
     this.cleanupCallback = deps.cleanupCallback;
+    this.pendingTtlMs = deps.pendingTtlMs ?? DEFAULT_PENDING_TTL_MS;
+    this.startCleanupInterval(deps.cleanupIntervalMs ?? DEFAULT_CLEANUP_INTERVAL_MS);
   }
 
   /**
@@ -153,10 +165,17 @@ export class ApprovalFlowCoordinator {
   }
 
   /**
-   * Clear all pending approvals.
+   * Clear all pending approvals and stop cleanup interval.
    */
   shutdown(): void {
     this.pendingApprovals.clear();
+
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+
+    this.logger.debug("ApprovalFlowCoordinator shutdown");
   }
 
   /**
@@ -173,12 +192,14 @@ export class ApprovalFlowCoordinator {
     const task = taskId ? this.registry.get(taskId) : undefined;
 
     if (!task) {
+      this.logger.warn("Approval requested but task not found", { requestId, sessionId, taskId });
       return;
     }
 
     this.trackPendingApproval(requestId, task.id, task.message.channelId, toolId);
     this.pauseTask(task, requestId, toolId);
     this.emitApprovalRequest({ taskId: task.id, channelId: task.message.channelId, toolId, input, requestId });
+    this.logger.debug("Approval request emitted", { requestId, taskId: task.id, toolId });
   }
 
   /**
@@ -190,11 +211,13 @@ export class ApprovalFlowCoordinator {
 
     const pending = this.pendingApprovals.get(requestId);
     if (!pending) {
+      this.logger.warn("Approval resolved but pending request not found", { requestId });
       return;
     }
 
     const task = this.registry.get(pending.taskId);
     if (!task) {
+      this.logger.warn("Approval resolved but task not found", { requestId, taskId: pending.taskId });
       this.pendingApprovals.delete(requestId);
       return;
     }
@@ -322,6 +345,45 @@ export class ApprovalFlowCoordinator {
       } catch (error) {
         this.logger.error("Approval resolved callback error", { error });
       }
+    }
+  }
+
+  /**
+   * Start the automatic cleanup interval for stale pending approvals.
+   * @private
+   */
+  private startCleanupInterval(intervalMs: number): void {
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupStaleApprovals();
+    }, intervalMs);
+  }
+
+  /**
+   * Clean up stale pending approvals that have exceeded TTL.
+   * @private
+   */
+  private cleanupStaleApprovals(): void {
+    const cutoff = Date.now() - this.pendingTtlMs;
+    let removedCount = 0;
+
+    for (const [requestId, pending] of this.pendingApprovals.entries()) {
+      if (pending.requestedAt < cutoff) {
+        this.toolRuntime?.emit("approvalCancelled", { requestId });
+        this.pendingApprovals.delete(requestId);
+        removedCount++;
+
+        // Log stale approval cleanup
+        this.logger.debug("Cleaned up stale pending approval", {
+          requestId,
+          taskId: pending.taskId,
+          toolId: pending.toolId,
+          ageMs: Date.now() - pending.requestedAt,
+        });
+      }
+    }
+
+    if (removedCount > 0) {
+      this.logger.debug("Cleaned up stale pending approvals", { count: removedCount });
     }
   }
 }
