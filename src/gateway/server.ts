@@ -24,6 +24,24 @@ import { ConnectionRateLimiter } from "./ConnectionRateLimiter.js";
 import { GatewayAuthenticator } from "./GatewayAuthenticator.js";
 import { NodeCommunicator } from "./NodeCommunicator.js";
 
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const RATE_LIMIT_WINDOW_MS = 60000;           // 1 minute
+const RATE_LIMIT_MAX_ATTEMPTS = 10;
+const PAIRING_CODE_TTL_MS = 5 * 60 * 1000;    // 5 minutes
+const SESSION_TIMEOUT_MS = 60 * 60 * 1000;    // 1 hour
+const MAX_NODES_PER_USER = 5;
+const MAX_OUTPUT_SIZE = 10 * 1024 * 1024;     // 10MB
+const MAX_ARGV_LENGTH = 10000;
+const CLEANUP_INTERVAL_MS = 60000;
+const WS_CLOSE_RATE_LIMITED = 1008;
+
+// ============================================================================
+// GatewayServer
+// ============================================================================
+
 export class GatewayServer {
   private wss: WebSocketServer | null = null;
   private rpc: JsonRpcServer;
@@ -52,8 +70,8 @@ export class GatewayServer {
 
     // Initialize rate limiter
     this.rateLimiter = new ConnectionRateLimiter({
-      windowMs: 60000, // 1 minute window
-      maxAttempts: 10, // max 10 connections per minute per IP
+      windowMs: RATE_LIMIT_WINDOW_MS,
+      maxAttempts: RATE_LIMIT_MAX_ATTEMPTS,
     });
 
     // Initialize authenticator (depends on rate limiter)
@@ -61,13 +79,13 @@ export class GatewayServer {
 
     // Initialize node managers
     this.nodeSessionManager = new NodeSessionManager({
-      pairingCodeTtlMs: 5 * 60 * 1000, // 5 minutes
-      sessionTimeoutMs: 60 * 60 * 1000, // 1 hour
-      maxNodesPerUser: 5,
+      pairingCodeTtlMs: PAIRING_CODE_TTL_MS,
+      sessionTimeoutMs: SESSION_TIMEOUT_MS,
+      maxNodesPerUser: MAX_NODES_PER_USER,
     });
     this.nodeCommandValidator = new NodeCommandValidator({
-      maxOutputSize: 10 * 1024 * 1024, // 10MB
-      maxArgvLength: 10000,
+      maxOutputSize: MAX_OUTPUT_SIZE,
+      maxArgvLength: MAX_ARGV_LENGTH,
     });
 
     // Initialize node communicator
@@ -81,39 +99,7 @@ export class GatewayServer {
     this.toolRuntime = null;
 
     this.initializeDependencies(workspaceRoot).then(() => {
-      // Initialize TaskOrchestrator with dependencies
-      this.orchestrator = new TaskOrchestrator(config, undefined, {
-        executor: this.executor ?? undefined,
-        toolkit: this.toolkit ?? undefined,
-        sessionManager: this.sessionManager ?? undefined,
-      });
-
-      // Register orchestrator response callback
-      this.orchestrator.onResponse((response) => {
-        this.broadcast("chat.response", response);
-      });
-
-      // Register orchestrator approval request callback
-      this.orchestrator.onApprovalRequest((event) => {
-        this.broadcast("approval.requested", {
-          taskId: event.taskId,
-          channelId: event.channelId,
-          toolId: event.toolId,
-          input: event.input,
-          requestId: event.requestId,
-        });
-      });
-
-      // Register orchestrator approval resolved callback
-      this.orchestrator.onApprovalResolved((event) => {
-        this.broadcast("approval.resolved", {
-          taskId: event.taskId,
-          channelId: event.channelId,
-          approved: event.approved,
-          requestId: event.requestId,
-        });
-      });
-
+      this.initializeOrchestrator();
       this.setupHandlers();
     }).catch((error) => {
       this.logger.error("Failed to initialize dependencies", { error });
@@ -164,20 +150,74 @@ export class GatewayServer {
   }
 
   /**
+   * Initialize TaskOrchestrator with all dependencies.
+   */
+  private initializeOrchestrator(): void {
+    this.orchestrator = new TaskOrchestrator(this.config, undefined, {
+      executor: this.executor ?? undefined,
+      toolkit: this.toolkit ?? undefined,
+      sessionManager: this.sessionManager ?? undefined,
+    });
+
+    this.setupOrchestratorCallbacks();
+  }
+
+  /**
+   * Register orchestrator event callbacks.
+   */
+  private setupOrchestratorCallbacks(): void {
+    this.orchestrator.onResponse((response) => {
+      this.broadcast("chat.response", response);
+    });
+
+    this.orchestrator.onApprovalRequest((event) => {
+      this.broadcast("approval.requested", {
+        taskId: event.taskId,
+        channelId: event.channelId,
+        toolId: event.toolId,
+        input: event.input,
+        requestId: event.requestId,
+      });
+    });
+
+    this.orchestrator.onApprovalResolved((event) => {
+      this.broadcast("approval.resolved", {
+        taskId: event.taskId,
+        channelId: event.channelId,
+        approved: event.approved,
+        requestId: event.requestId,
+      });
+    });
+  }
+
+  /**
    * Get the tool runtime instance.
    */
   getToolRuntime(): ToolRuntime | null {
     return this.toolRuntime;
   }
 
+  /**
+   * Register all RPC handlers.
+   */
   private setupHandlers(): void {
-    // Register tool handlers
+    this.setupToolHandlers();
+    this.setupChannelHandlers();
+    this.setupNodesHandlers();
+    this.setupConnectionHandlers();
+    this.setupChatHandlers();
+    this.setupSessionHandlers();
+    this.setupApprovalHandlers();
+  }
+
+  private setupToolHandlers(): void {
     if (this.toolRuntime) {
       const toolHandlers = createToolHandlers(this.toolRuntime, this.config);
       this.rpc.registerBatch(toolHandlers);
     }
+  }
 
-    // Register channel handlers
+  private setupChannelHandlers(): void {
     const channelHandlers = createChannelHandlers(this.config, (newConfig) => {
       this.config = newConfig;
       saveConfig(newConfig).catch(error => {
@@ -185,8 +225,9 @@ export class GatewayServer {
       });
     });
     this.rpc.registerBatch(channelHandlers);
+  }
 
-    // Register nodes handlers
+  private setupNodesHandlers(): void {
     const nodesHandlers = createNodesHandlers(
       this.nodeSessionManager,
       this.nodeCommandValidator,
@@ -194,8 +235,9 @@ export class GatewayServer {
       (nodeId, message) => this.nodeCommunicator.sendToNode(nodeId, message)
     );
     this.rpc.registerBatch(nodesHandlers);
+  }
 
-    // connect: Handshake and client registration
+  private setupConnectionHandlers(): void {
     this.rpc.register("connect", async (params) => {
       const { clientType, version, token } = params as ConnectParams;
 
@@ -216,7 +258,16 @@ export class GatewayServer {
       return { clientId, ...clientInfo };
     });
 
-    // chat.send: Send message from surface to agent (delegated to Orchestrator)
+    this.rpc.register("disconnect", async (params) => {
+      const { clientId } = params as { clientId: string };
+      this.clients.delete(clientId);
+      this.sockets.delete(clientId);
+      this.logger.info(`Client disconnected: ${clientId}`);
+      return { success: true };
+    });
+  }
+
+  private setupChatHandlers(): void {
     this.rpc.register("chat.send", async (params) => {
       const message = params as ChatMessage;
 
@@ -236,30 +287,22 @@ export class GatewayServer {
         return result;
       });
     });
+  }
 
-    // session.get: Get session by ID
+  private setupSessionHandlers(): void {
     this.rpc.register("session.get", async (params) => {
       const { sessionId } = params as { sessionId: string };
       return { sessionId, exists: false };
     });
 
-    // logs.tail: Stream logs
     this.rpc.register("logs.tail", async (params) => {
       const { filter } = params as { filter?: string };
       this.logger.info("Logs tail requested", { filter });
       return { status: "streaming" };
     });
+  }
 
-    // disconnect: Client disconnect
-    this.rpc.register("disconnect", async (params) => {
-      const { clientId } = params as { clientId: string };
-      this.clients.delete(clientId);
-      this.sockets.delete(clientId);
-      this.logger.info(`Client disconnected: ${clientId}`);
-      return { success: true };
-    });
-
-    // approval.grant: Grant or deny approval for a paused task
+  private setupApprovalHandlers(): void {
     this.rpc.register("approval.grant", async (params) => {
       const { taskId, approved } = params as { taskId: string; approved: boolean };
       this.logger.info("Approval request", { taskId, approved });
@@ -272,7 +315,6 @@ export class GatewayServer {
       return { success: true, taskId, approved };
     });
 
-    // approval.list: Get pending approval requests
     this.rpc.register("approval.list", async () => {
       const pending = this.orchestrator.getPendingApprovals();
       return {
@@ -289,7 +331,7 @@ export class GatewayServer {
       // Start periodic cleanup of rate limiter
       this.cleanupInterval = setInterval(() => {
         this.rateLimiter.cleanup();
-      }, 60000);
+      }, CLEANUP_INTERVAL_MS);
 
       this.wss.on("listening", () => {
         this.logger.info(`Gateway listening on ${host}:${port}`);
@@ -302,41 +344,45 @@ export class GatewayServer {
       });
 
       this.wss.on("connection", (ws, req) => {
-        const socketId = randomUUID();
-        const ip = req.socket.remoteAddress || socketId;
-
-        // Check rate limit
-        if (!this.rateLimiter.checkLimit(ip)) {
-          this.logger.warn(`Connection rate limited: ${ip}`);
-          ws.close(1008, "Rate limit exceeded");
-          return;
-        }
-
-        this.sockets.set(socketId, ws);
-        this.logger.info(`WebSocket connected: ${socketId} from ${ip}`);
-
-        ws.on("message", async (data) => {
-          try {
-            const message = data.toString();
-            const response = await this.rpc.handleMessage(message);
-            if (response) {
-              ws.send(response);
-            }
-          } catch (error) {
-            this.logger.error("Error handling message", { error });
-          }
-        });
-
-        ws.on("close", () => {
-          this.sockets.delete(socketId);
-          this.nodeCommunicator.handleNodeDisconnect(socketId);
-          this.logger.info(`WebSocket disconnected: ${socketId}`);
-        });
-
-        ws.on("error", (error) => {
-          this.logger.error(`WebSocket error: ${socketId}`, { error });
-        });
+        this.handleConnection(ws, req);
       });
+    });
+  }
+
+  private handleConnection(ws: WebSocket, req: { socket: { remoteAddress?: string } }): void {
+    const socketId = randomUUID();
+    const ip = req.socket.remoteAddress || socketId;
+
+    // Check rate limit
+    if (!this.rateLimiter.checkLimit(ip)) {
+      this.logger.warn(`Connection rate limited: ${ip}`);
+      ws.close(WS_CLOSE_RATE_LIMITED, "Rate limit exceeded");
+      return;
+    }
+
+    this.sockets.set(socketId, ws);
+    this.logger.info(`WebSocket connected: ${socketId} from ${ip}`);
+
+    ws.on("message", async (data) => {
+      try {
+        const message = data.toString();
+        const response = await this.rpc.handleMessage(message);
+        if (response) {
+          ws.send(response);
+        }
+      } catch (error) {
+        this.logger.error("Error handling message", { error });
+      }
+    });
+
+    ws.on("close", () => {
+      this.sockets.delete(socketId);
+      this.nodeCommunicator.handleNodeDisconnect(socketId);
+      this.logger.info(`WebSocket disconnected: ${socketId}`);
+    });
+
+    ws.on("error", (error) => {
+      this.logger.error(`WebSocket error: ${socketId}`, { error });
     });
   }
 

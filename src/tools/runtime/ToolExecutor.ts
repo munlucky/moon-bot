@@ -12,6 +12,16 @@ import { ApprovalManager } from "./ApprovalManager.js";
 import { createLogger, type Logger } from "../../utils/logger.js";
 import type { ToolInvocation } from "./ToolRuntime.js";
 
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const DEFAULT_MAX_BYTES = 2 * 1024 * 1024;  // 2MB
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
 export interface RuntimeConfig {
   workspaceRoot: string;
   defaultTimeoutMs: number;
@@ -28,6 +38,14 @@ export interface ToolExecutorDeps {
   onInvocationUpdated: (invocation: ToolInvocation) => void;
   onRunningCountChange: (delta: number) => void;
 }
+
+type ExecutionResult =
+  | { success: true; data: unknown; durationMs: number }
+  | { success: false; error: Error; durationMs: number };
+
+// ============================================================================
+// ToolExecutor
+// ============================================================================
 
 export class ToolExecutor {
   private systemConfig: SystemConfig;
@@ -48,6 +66,10 @@ export class ToolExecutor {
     this.onRunningCountChange = deps.onRunningCountChange;
   }
 
+  // ============================================================================
+  // PUBLIC API
+  // ============================================================================
+
   /**
    * Execute a tool with input validation and timeout.
    * @returns { invocationId, result, awaitingApproval }
@@ -62,34 +84,25 @@ export class ToolExecutor {
     parentInvocationId?: string,
     checkApproval: boolean = true
   ): Promise<{ invocationId: string; result?: ToolResult; awaitingApproval?: boolean }> {
-    // Validate input
+    // Validate input first
     const validationResult = SchemaValidator.validateJsonSchema(tool.schema, input);
     if (!validationResult.success) {
       return {
         invocationId: "",
-        result: {
-          ok: false,
-          error: {
-            code: "INVALID_INPUT",
-            message: "Input validation failed",
-            details: validationResult.errors,
-          },
-          meta: { durationMs: 0 },
-        },
+        result: this.createValidationErrorResult(validationResult.errors),
       };
     }
 
+    // Create invocation record
     const invocationId = randomUUID();
-    const invocation: ToolInvocation = {
-      id: invocationId,
-      toolId: tool.id,
+    const invocation = this.createInvocation(
+      invocationId,
+      tool.id,
       sessionId,
       input,
-      status: "running",
-      startTime: Date.now(),
       retryCount,
-      parentInvocationId,
-    };
+      parentInvocationId
+    );
 
     this.onInvocationCreated(invocation);
     this.onRunningCountChange(1);
@@ -103,91 +116,18 @@ export class ToolExecutor {
       });
     }
 
-    try {
-      // Check approval for dangerous tools
-      if (checkApproval && tool.requiresApproval && this.config.enableApprovals) {
-        await this.approvalManager.loadConfig();
-
-        const { approvalRequired } = await this.checkToolApproval(
-          tool.id,
-          input,
-          validationResult.data as Record<string, unknown>
-        );
-
-        if (approvalRequired) {
-          invocation.status = "awaiting_approval";
-          this.onInvocationUpdated(invocation);
-          return { invocationId, awaitingApproval: true };
-        }
-      }
-
-      // Execute tool
-      const ctx = this.createContext(sessionId, agentId, userId);
-      const startTime = Date.now();
-
-      // Create timeout with cleanup
-      let timeoutId: NodeJS.Timeout | undefined;
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(
-          () => reject(new Error("Tool execution timeout")),
-          ctx.policy.timeoutMs
-        );
-      });
-
-      try {
-        const result = await Promise.race([
-          tool.run(validationResult.data as never, ctx),
-          timeoutPromise,
-        ]);
-
-        const durationMs = Date.now() - startTime;
-
-        // Format result
-        const formattedResult: ToolResult = {
-          ok: true,
-          data: result,
-          meta: { durationMs },
-        };
-
-        invocation.status = "completed";
-        invocation.endTime = Date.now();
-        invocation.result = formattedResult;
+    // Check approval if required
+    if (checkApproval && tool.requiresApproval && this.config.enableApprovals) {
+      const approvalResult = await this.checkApprovalIfNeeded(tool.id, input, validationResult.data as Record<string, unknown>);
+      if (approvalResult.approvalRequired) {
+        invocation.status = "awaiting_approval";
         this.onInvocationUpdated(invocation);
-        this.onRunningCountChange(-1);
-
-        this.logger.info(`Tool invoked: ${tool.id}`, { durationMs, sessionId, retryCount });
-
-        return { invocationId, result: formattedResult };
-      } finally {
-        // Always clear timeout to prevent memory leaks
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
+        return { invocationId, awaitingApproval: true };
       }
-    } catch (error) {
-      this.onRunningCountChange(-1);
-
-      const durationMs = Date.now() - invocation.startTime;
-      invocation.status = "failed";
-      invocation.endTime = Date.now();
-
-      const errorResult: ToolResult = {
-        ok: false,
-        error: {
-          code: "EXECUTION_ERROR",
-          message: error instanceof Error ? error.message : "Unknown error",
-          details: error instanceof Error ? error.stack : undefined,
-        },
-        meta: { durationMs },
-      };
-
-      invocation.result = errorResult;
-      this.onInvocationUpdated(invocation);
-
-      this.logger.error(`Tool execution failed: ${tool.id}`, { error, retryCount });
-
-      return { invocationId, result: errorResult };
     }
+
+    // Execute tool
+    return this.executeTool(tool, invocation, sessionId, agentId, userId, validationResult.data);
   }
 
   /**
@@ -201,78 +141,158 @@ export class ToolExecutor {
     this.onInvocationUpdated(invocation);
     this.onRunningCountChange(1);
 
+    const validationResult = SchemaValidator.validateJsonSchema(tool.schema, invocation.input);
+    if (!validationResult.success) {
+      throw new Error("Invalid input");
+    }
+
+    const executionResult = await this.runToolWithTimeout(
+      tool,
+      validationResult.data as never,
+      this.createContext(invocation.sessionId, "", "")
+    );
+
+    return this.finalizeExecution(invocation, executionResult);
+  }
+
+  // ============================================================================
+  // PRIVATE - Execution Core
+  // ============================================================================
+
+  /**
+   * Execute tool and handle success/failure uniformly.
+   */
+  private async executeTool(
+    tool: ToolSpec,
+    invocation: ToolInvocation,
+    sessionId: string,
+    agentId: string,
+    userId: string,
+    validatedInput: unknown
+  ): Promise<{ invocationId: string; result: ToolResult }> {
+    const ctx = this.createContext(sessionId, agentId, userId);
+    const executionResult = await this.runToolWithTimeout(tool, validatedInput as never, ctx);
+
+    const result = this.finalizeExecution(invocation, executionResult);
+
+    return { invocationId: invocation.id, result };
+  }
+
+  /**
+   * Run tool with timeout, handling both success and failure cases.
+   */
+  private async runToolWithTimeout(
+    tool: ToolSpec,
+    validatedInput: unknown,
+    ctx: ToolContext
+  ): Promise<ExecutionResult> {
+    const startTime = Date.now();
+    const timeoutMs = ctx.policy.timeoutMs;
+
+    let timeoutId: NodeJS.Timeout | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error("Tool execution timeout")), timeoutMs);
+    });
+
     try {
-      const ctx = this.createContext(invocation.sessionId, "", "");
-      const startTime = Date.now();
+      const data = await Promise.race([
+        tool.run(validatedInput, ctx),
+        timeoutPromise,
+      ]);
 
-      // Create timeout with cleanup
-      let timeoutId: NodeJS.Timeout | undefined;
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(
-          () => reject(new Error("Tool execution timeout")),
-          ctx.policy.timeoutMs
-        );
-      });
-
-      const validationResult = SchemaValidator.validateJsonSchema(tool.schema, invocation.input);
-      if (!validationResult.success) {
-        throw new Error("Invalid input");
-      }
-
-      try {
-        const result = await Promise.race([
-          tool.run(validationResult.data as never, ctx),
-          timeoutPromise,
-        ]);
-
-        const durationMs = Date.now() - startTime;
-
-        const formattedResult: ToolResult = {
-          ok: true,
-          data: result,
-          meta: { durationMs },
-        };
-
-        invocation.status = "completed";
-        invocation.endTime = Date.now();
-        invocation.result = formattedResult;
-        this.onInvocationUpdated(invocation);
-        this.onRunningCountChange(-1);
-
-        return formattedResult;
-      } finally {
-        // Always clear timeout to prevent memory leaks
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
-      }
+      return { success: true, data, durationMs: Date.now() - startTime };
     } catch (error) {
-      this.onRunningCountChange(-1);
-
-      const durationMs = Date.now() - invocation.startTime;
-      invocation.status = "failed";
-      invocation.endTime = Date.now();
-
-      const errorResult: ToolResult = {
-        ok: false,
-        error: {
-          code: "EXECUTION_ERROR",
-          message: error instanceof Error ? error.message : "Unknown error",
-        },
-        meta: { durationMs },
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error("Unknown error"),
+        durationMs: Date.now() - startTime,
       };
-
-      invocation.result = errorResult;
-      this.onInvocationUpdated(invocation);
-
-      return errorResult;
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     }
   }
 
   /**
-   * Create a ToolContext for tool execution.
+   * Finalize execution result (success or failure) and update invocation.
    */
+  private finalizeExecution(
+    invocation: ToolInvocation,
+    executionResult: ExecutionResult
+  ): ToolResult {
+    this.onRunningCountChange(-1);
+
+    const durationMs = executionResult.durationMs;
+    invocation.endTime = Date.now();
+
+    if (executionResult.success) {
+      invocation.status = "completed";
+      const result: ToolResult = {
+        ok: true,
+        data: executionResult.data,
+        meta: { durationMs },
+      };
+      invocation.result = result;
+      this.onInvocationUpdated(invocation);
+      this.logger.info(`Tool invoked: ${invocation.toolId}`, { durationMs, sessionId: invocation.sessionId });
+      return result;
+    }
+
+    invocation.status = "failed";
+    const result: ToolResult = {
+      ok: false,
+      error: {
+        code: "EXECUTION_ERROR",
+        message: executionResult.error.message,
+        details: executionResult.error instanceof Error ? executionResult.error.stack : undefined,
+      },
+      meta: { durationMs },
+    };
+    invocation.result = result;
+    this.onInvocationUpdated(invocation);
+    this.logger.error(`Tool execution failed: ${invocation.toolId}`, { error: executionResult.error });
+    return result;
+  }
+
+  // ============================================================================
+  // PRIVATE - Helpers
+  // ============================================================================
+
+  private createInvocation(
+    id: string,
+    toolId: string,
+    sessionId: string,
+    input: unknown,
+    retryCount: number,
+    parentInvocationId?: string
+  ): ToolInvocation {
+    return {
+      id,
+      toolId,
+      sessionId,
+      input,
+      status: "running",
+      startTime: Date.now(),
+      retryCount,
+      parentInvocationId,
+    };
+  }
+
+  private createValidationErrorResult(errors: unknown): ToolResult {
+    return {
+      ok: false,
+      error: {
+        code: "INVALID_INPUT",
+        message: "Input validation failed",
+        details: errors,
+      },
+      meta: { durationMs: 0 },
+    };
+  }
+
   private createContext(sessionId: string, agentId: string, userId: string): ToolContext {
+    const config = this.approvalManager.getConfig();
     return {
       sessionId,
       agentId,
@@ -280,39 +300,37 @@ export class ToolExecutor {
       config: this.systemConfig,
       workspaceRoot: this.config.workspaceRoot,
       policy: {
-        allowlist: this.approvalManager.getConfig()?.allowlist.commands ?? [],
-        denylist: this.approvalManager.getConfig()?.denylist.patterns ?? [],
-        maxBytes: 2 * 1024 * 1024, // 2MB default
+        allowlist: config?.allowlist.commands ?? [],
+        denylist: config?.denylist.patterns ?? [],
+        maxBytes: DEFAULT_MAX_BYTES,
         timeoutMs: this.config.defaultTimeoutMs,
       },
     };
   }
 
-  /**
-   * Check if tool requires approval.
-   */
-  private async checkToolApproval(
+  private async checkApprovalIfNeeded(
     toolId: string,
     rawInput: unknown,
     validatedInput: Record<string, unknown>
   ): Promise<{ approvalRequired: boolean; approvalData?: unknown }> {
-    // Special handling for system.run tool
-    if (toolId === "system.run") {
-      const command = validatedInput.argv as string | string[];
-      const cwd = validatedInput.cwd as string;
-
-      const approval = await this.approvalManager.checkApproval(
-        command,
-        cwd,
-        this.config.workspaceRoot
-      );
-
-      return {
-        approvalRequired: !approval.approved,
-        approvalData: approval.reason,
-      };
+    if (toolId !== "system.run") {
+      return { approvalRequired: false };
     }
 
-    return { approvalRequired: false };
+    await this.approvalManager.loadConfig();
+
+    const command = validatedInput.argv as string | string[];
+    const cwd = validatedInput.cwd as string;
+
+    const approval = await this.approvalManager.checkApproval(
+      command,
+      cwd,
+      this.config.workspaceRoot
+    );
+
+    return {
+      approvalRequired: !approval.approved,
+      approvalData: approval.reason,
+    };
   }
 }

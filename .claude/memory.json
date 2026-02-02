@@ -133,6 +133,8 @@
 {"type":"entity","name":"moonbot::Convention::FileStructure","entityType":"convention","observations":["기능별 폴더 분리 (gateway/, orchestrator/, tools/)","테스트 파일: *.test.ts 또는 *.integration.test.ts","index.ts: 모듈 내보내기 전용","handlers/: 하위 기능 모음 (gateway/handlers/)"]}
 {"type":"entity","name":"moonbot::Convention::ToolSpec","entityType":"convention","observations":["도구 정의는 ToolSpec 인터페이스 사용","id: 도구 식별자 (kebab-case)","description: 도구 설명","schema: TypeBox 또는 Zod 스키마","requiresApproval: 승인 필요 여부","run: 비동기 실행 함수"]}
 {"type":"entity","name":"moon-bot::Refactoring::CodeSimplifier20260202","entityType":"milestone","observations":["code-simplifier 플러그인 사용으로 5개 파일 개선 완료 (2026-02-02)","ConnectionRateLimiter.ts: checkLimitInMap, cleanupMap 헬퍼 추출로 중복 제거","GatewayAuthenticator.ts: parseAuthConfig, isValidToken, throwAuthError 헬퍼 추출","NodeCommunicator.ts: PendingRequest에 nodeId 추적 추가, handleNodeDisconnect 버그 수정","ApprovalFlowCoordinator.ts: setup 메서드 110줄→분리로 handleApprovalRequested, handleApprovalResolved 추출","SessionTaskMapper.ts: SessionEntry 인터페이스 추출, isExpired, findSessionIdsByTaskId 헬퍼 추가"]}
+{"type":"entity","name":"moon-bot::Component::GatewayServer","entityType":"component","observations":["WebSocket 게이트웨이 서버 (ws 기반)","비동기 의존성 초기화 패턴 사용","ConnectionRateLimiter, GatewayAuthenticator, NodeCommunicator 사용","상수 추출: RATE_LIMIT_WINDOW_MS, CLEANUP_INTERVAL_MS 등 9개","setupHandlers()를 7개 전용 메서드로 분리 (setupToolHandlers, setupChannelHandlers 등)","initializeOrchestrator(), setupOrchestratorCallbacks() 추출","handleConnection()으로 WebSocket 연결 처리 분리"]}
+{"type":"entity","name":"moon-bot::Component::ToolRuntime","entityType":"component","observations":["도구 실행 런타임 (Facade 패턴)","ToolRegistry: 도구 등록 관리","ToolExecutor: 도구 실행 처리","상수 추출: DEFAULT_CLEANUP_INTERVAL_MS, DEFAULT_TIMEOUT_MS 등 5개","에러 헬퍼 함수: createToolNotFoundError, createConcurrencyLimitError 등 5개","getStats()를 reduce()로 간소화","buildRuntimeConfig()로 설정 구성 로직 분리"]}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Channels","relationType":"manages"}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Agents","relationType":"orchestrates"}
 {"type":"relation","from":"moonbot::Component::Agents","to":"moonbot::Component::Tools","relationType":"uses"}
@@ -220,3 +222,6 @@
 {"type":"relation","from":"moonbot::Module::Gateway","to":"moonbot::Module::Orchestrator","relationType":"uses"}
 {"type":"relation","from":"moonbot::Module::Orchestrator","to":"moonbot::Module::ToolsRuntime","relationType":"uses"}
 {"type":"relation","from":"moonbot::Module::Orchestrator","to":"moonbot::Module::CLI","relationType":"coordinates"}
+{"type":"relation","from":"moon-bot::Component::ToolRuntime","to":"moon-bot::Component::ToolExecutor","relationType":"uses"}
+{"type":"relation","from":"moon-bot::Component::ToolRuntime","to":"moon-bot::Component::ToolRegistry","relationType":"uses"}
+{"type":"relation","from":"moon-bot::Component::GatewayServer","to":"moon-bot::Component::ToolRuntime","relationType":"manages"}

@@ -14,6 +14,64 @@ import { ToolExecutor, type RuntimeConfig } from "./ToolExecutor.js";
 import { ApprovalManager } from "./ApprovalManager.js";
 import { createLogger, type Logger } from "../../utils/logger.js";
 
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const DEFAULT_CLEANUP_INTERVAL_MS = 300000;  // 5 minutes
+const DEFAULT_INVOCATION_TTL_MS = 3600000;   // 1 hour
+const DEFAULT_TIMEOUT_MS = 30000;            // 30 seconds
+const DEFAULT_MAX_CONCURRENT = 10;
+const DEFAULT_WORKSPACE_ROOT = process.cwd();
+
+// ============================================================================
+// ERROR RESULT CREATORS
+// ============================================================================
+
+function createToolNotFoundError(toolId: string): ToolResult {
+  return {
+    ok: false,
+    error: { code: "TOOL_NOT_FOUND", message: `Tool not found: ${toolId}` },
+    meta: { durationMs: 0 },
+  };
+}
+
+function createConcurrencyLimitError(): ToolResult {
+  return {
+    ok: false,
+    error: { code: "CONCURRENCY_LIMIT", message: "Too many concurrent tool invocations" },
+    meta: { durationMs: 0 },
+  };
+}
+
+function createInvocationNotFoundError(): ToolResult {
+  return {
+    ok: false,
+    error: { code: "INVOCATION_NOT_FOUND", message: "Invocation not found" },
+    meta: { durationMs: 0 },
+  };
+}
+
+function createInvalidStateError(message: string): ToolResult {
+  return {
+    ok: false,
+    error: { code: "INVALID_STATE", message },
+    meta: { durationMs: 0 },
+  };
+}
+
+function createApprovalDeniedError(): ToolResult {
+  return {
+    ok: false,
+    error: { code: "APPROVAL_DENIED", message: "Tool execution was not approved" },
+    meta: { durationMs: 0 },
+  };
+}
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
 export interface ToolInvocation {
   id: string;
   toolId: string;
@@ -37,23 +95,25 @@ export class ToolRuntime extends EventEmitter {
   private logger: Logger;
   private runningCount = 0;
   private cleanupInterval: NodeJS.Timeout | null = null;
-  private readonly CLEANUP_INTERVAL_MS = 300000; // 5 minutes
-  private readonly INVOCATION_TTL_MS = 3600000; // 1 hour
+  private readonly CLEANUP_INTERVAL_MS: number;
+  private readonly INVOCATION_TTL_MS: number;
 
   static readonly Events = {
     APPROVAL_REQUESTED: "approval.requested",
     APPROVAL_RESOLVED: "approval.resolved",
   } as const;
 
-  constructor(systemConfig: SystemConfig, runtimeConfig: Partial<RuntimeConfig> = {}) {
+  constructor(
+    systemConfig: SystemConfig,
+    runtimeConfig: Partial<RuntimeConfig> = {},
+    timingConfig?: { cleanupIntervalMs?: number; invocationTtlMs?: number }
+  ) {
     super();
     this.systemConfig = systemConfig;
-    this.config = {
-      workspaceRoot: runtimeConfig.workspaceRoot ?? process.cwd(),
-      defaultTimeoutMs: runtimeConfig.defaultTimeoutMs ?? 30000,
-      maxConcurrent: runtimeConfig.maxConcurrent ?? 10,
-      enableApprovals: runtimeConfig.enableApprovals ?? true,
-    };
+    this.config = this.buildRuntimeConfig(runtimeConfig);
+    this.CLEANUP_INTERVAL_MS = timingConfig?.cleanupIntervalMs ?? DEFAULT_CLEANUP_INTERVAL_MS;
+    this.INVOCATION_TTL_MS = timingConfig?.invocationTtlMs ?? DEFAULT_INVOCATION_TTL_MS;
+
     this.logger = createLogger(systemConfig);
     this.registry = new ToolRegistry(this.logger);
     this.approvalManager = new ApprovalManager();
@@ -77,6 +137,15 @@ export class ToolRuntime extends EventEmitter {
 
     // Start automatic cleanup interval
     this.startCleanupInterval();
+  }
+
+  private buildRuntimeConfig(runtimeConfig: Partial<RuntimeConfig>): RuntimeConfig {
+    return {
+      workspaceRoot: runtimeConfig.workspaceRoot ?? DEFAULT_WORKSPACE_ROOT,
+      defaultTimeoutMs: runtimeConfig.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS,
+      maxConcurrent: runtimeConfig.maxConcurrent ?? DEFAULT_MAX_CONCURRENT,
+      enableApprovals: runtimeConfig.enableApprovals ?? true,
+    };
   }
 
   /**
@@ -108,6 +177,10 @@ export class ToolRuntime extends EventEmitter {
     }
   }
 
+  // ============================================================================
+  // PUBLIC API - Tool Registration
+  // ============================================================================
+
   /**
    * Register a tool with the runtime.
    */
@@ -135,6 +208,10 @@ export class ToolRuntime extends EventEmitter {
   listTools(): Array<{ id: string; description: string; schema: object; requiresApproval?: boolean }> {
     return this.registry.list();
   }
+
+  // ============================================================================
+  // PUBLIC API - Invocations
+  // ============================================================================
 
   /**
    * Get an invocation by ID.
@@ -168,6 +245,34 @@ export class ToolRuntime extends EventEmitter {
   }
 
   /**
+   * Get invocation statistics.
+   */
+  getStats(): {
+    totalInvocations: number;
+    byStatus: Record<string, number>;
+    avgRetryCount: number;
+  } {
+    const invocations = Array.from(this.invocations.values());
+
+    const byStatus = invocations.reduce<Record<string, number>>((acc, inv) => {
+      acc[inv.status] = (acc[inv.status] || 0) + 1;
+      return acc;
+    }, {});
+
+    const totalRetryCount = invocations.reduce((sum, inv) => sum + inv.retryCount, 0);
+
+    return {
+      totalInvocations: invocations.length,
+      byStatus,
+      avgRetryCount: invocations.length > 0 ? totalRetryCount / invocations.length : 0,
+    };
+  }
+
+  // ============================================================================
+  // PUBLIC API - Tool Invocation
+  // ============================================================================
+
+  /**
    * Invoke a tool with input validation and timeout.
    */
   async invoke(
@@ -181,26 +286,11 @@ export class ToolRuntime extends EventEmitter {
   ): Promise<{ invocationId: string; result?: ToolResult; awaitingApproval?: boolean }> {
     const tool = this.registry.get(toolId);
     if (!tool) {
-      return {
-        invocationId: "",
-        result: {
-          ok: false,
-          error: { code: "TOOL_NOT_FOUND", message: `Tool not found: ${toolId}` },
-          meta: { durationMs: 0 },
-        },
-      };
+      return { invocationId: "", result: createToolNotFoundError(toolId) };
     }
 
-    // Check concurrent limit
     if (this.runningCount >= this.config.maxConcurrent) {
-      return {
-        invocationId: "",
-        result: {
-          ok: false,
-          error: { code: "CONCURRENCY_LIMIT", message: "Too many concurrent tool invocations" },
-          meta: { durationMs: 0 },
-        },
-      };
+      return { invocationId: "", result: createConcurrencyLimitError() };
     }
 
     const result = await this.executor.execute(
@@ -228,6 +318,10 @@ export class ToolRuntime extends EventEmitter {
     return result;
   }
 
+  // ============================================================================
+  // PUBLIC API - Approvals
+  // ============================================================================
+
   /**
    * Approve a pending tool invocation.
    */
@@ -235,58 +329,18 @@ export class ToolRuntime extends EventEmitter {
     const invocation = this.invocations.get(invocationId);
 
     if (!invocation) {
-      return {
-        ok: false,
-        error: { code: "INVOCATION_NOT_FOUND", message: "Invocation not found" },
-        meta: { durationMs: 0 },
-      };
+      return createInvocationNotFoundError();
     }
 
     if (invocation.status !== "awaiting_approval") {
-      return {
-        ok: false,
-        error: { code: "INVALID_STATE", message: "Invocation is not awaiting approval" },
-        meta: { durationMs: 0 },
-      };
+      return createInvalidStateError("Invocation is not awaiting approval");
     }
 
     if (!approved) {
-      invocation.status = "failed";
-      invocation.endTime = Date.now();
-      invocation.result = {
-        ok: false,
-        error: { code: "APPROVAL_DENIED", message: "Tool execution was not approved" },
-        meta: { durationMs: 0 },
-      };
-
-      // Emit approval resolved event
-      this.emit(ToolRuntime.Events.APPROVAL_RESOLVED, {
-        requestId: invocationId,
-        approved: false,
-      });
-
-      return invocation.result;
+      return this.handleApprovalDenied(invocation);
     }
 
-    // Re-execute with approval granted
-    const tool = this.registry.get(invocation.toolId);
-    if (!tool) {
-      return {
-        ok: false,
-        error: { code: "TOOL_NOT_FOUND", message: "Tool not found" },
-        meta: { durationMs: 0 },
-      };
-    }
-
-    const result = await this.executor.reExecuteAfterApproval(tool, invocation);
-
-    // Emit approval resolved event
-    this.emit(ToolRuntime.Events.APPROVAL_RESOLVED, {
-      requestId: invocationId,
-      approved: true,
-    });
-
-    return result;
+    return this.handleApprovalGranted(invocation);
   }
 
   /**
@@ -298,10 +352,47 @@ export class ToolRuntime extends EventEmitter {
     );
   }
 
+  // ============================================================================
+  // PRIVATE - Approval Handling
+  // ============================================================================
+
+  private handleApprovalDenied(invocation: ToolInvocation): ToolResult {
+    invocation.status = "failed";
+    invocation.endTime = Date.now();
+    invocation.result = createApprovalDeniedError();
+
+    this.emit(ToolRuntime.Events.APPROVAL_RESOLVED, {
+      requestId: invocation.id,
+      approved: false,
+    });
+
+    return invocation.result;
+  }
+
+  private async handleApprovalGranted(invocation: ToolInvocation): Promise<ToolResult> {
+    const tool = this.registry.get(invocation.toolId);
+    if (!tool) {
+      return createToolNotFoundError(invocation.toolId);
+    }
+
+    const result = await this.executor.reExecuteAfterApproval(tool, invocation);
+
+    this.emit(ToolRuntime.Events.APPROVAL_RESOLVED, {
+      requestId: invocation.id,
+      approved: true,
+    });
+
+    return result;
+  }
+
+  // ============================================================================
+  // PRIVATE - Cleanup
+  // ============================================================================
+
   /**
    * Clean up old invocations to prevent memory leaks.
    */
-  cleanup(maxAgeMs: number = 3600000): void {
+  cleanup(maxAgeMs: number = this.INVOCATION_TTL_MS): void {
     const now = Date.now();
     const cutoff = now - maxAgeMs;
 
@@ -314,30 +405,6 @@ export class ToolRuntime extends EventEmitter {
         this.invocations.delete(id);
       }
     }
-  }
-
-  /**
-   * Get invocation statistics
-   */
-  getStats(): {
-    totalInvocations: number;
-    byStatus: Record<string, number>;
-    avgRetryCount: number;
-  } {
-    const invocations = Array.from(this.invocations.values());
-    const byStatus: Record<string, number> = {};
-    let totalRetryCount = 0;
-
-    for (const inv of invocations) {
-      byStatus[inv.status] = (byStatus[inv.status] || 0) + 1;
-      totalRetryCount += inv.retryCount;
-    }
-
-    return {
-      totalInvocations: invocations.length,
-      byStatus,
-      avgRetryCount: invocations.length > 0 ? totalRetryCount / invocations.length : 0,
-    };
   }
 
   /**
