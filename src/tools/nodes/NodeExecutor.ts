@@ -173,10 +173,6 @@ async function executeWithRetry<T>(
 
       // Calculate delay and retry
       const delay = calculateRetryDelay(attempt, config);
-      console.warn(
-        `[NodeExecutor] ${operationName} failed (attempt ${attempt + 1}/${config.maxRetries + 1}), ` +
-        `retrying in ${Math.round(delay)}ms: ${lastError.message}`
-      );
 
       await sleep(delay);
     }

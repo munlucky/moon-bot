@@ -320,7 +320,9 @@ describe("FileIOTool", () => {
     it("T17: should match files with glob pattern at workspace root", async () => {
       // Mock virtual file system structure
       mockReaddir.mockImplementation(async (dirPath: string) => {
-        if (dirPath === "/workspace" || dirPath === "/workspace/.") {
+        // Handle both Unix and Windows paths
+        const normalizedPath = dirPath.replace(/\\/g, "/");
+        if (normalizedPath === "/workspace" || normalizedPath === "/workspace/." || normalizedPath.endsWith("/workspace")) {
           return [
             createMockDirent("test.txt", false),
             createMockDirent("test.js", false),
@@ -328,7 +330,7 @@ describe("FileIOTool", () => {
             createMockDirent("src", true),
           ] as import("fs").Dirent[];
         }
-        if (dirPath === "/workspace/src") {
+        if (normalizedPath === "/workspace/src" || normalizedPath.endsWith("/workspace/src")) {
           return [createMockDirent("file.ts", false)] as import("fs").Dirent[];
         }
         return [];
@@ -348,13 +350,15 @@ describe("FileIOTool", () => {
     it("T18: should match files in subdirectories", async () => {
       // Mock virtual file system with subdirectory
       mockReaddir.mockImplementation(async (dirPath: string) => {
-        if (dirPath === "/workspace" || dirPath === "/workspace/.") {
+        // Handle both Unix and Windows paths
+        const normalizedPath = dirPath.replace(/\\/g, "/");
+        if (normalizedPath === "/workspace" || normalizedPath === "/workspace/." || normalizedPath.endsWith("/workspace")) {
           return [
             createMockDirent("test.txt", false),
             createMockDirent("src", true),
           ] as import("fs").Dirent[];
         }
-        if (dirPath === "/workspace/src") {
+        if (normalizedPath === "/workspace/src" || normalizedPath.endsWith("/workspace/src")) {
           return [createMockDirent("file.ts", false)] as import("fs").Dirent[];
         }
         return [];

@@ -1,59 +1,88 @@
 schemaVersion: "1.0"
 request:
-  userMessage: "공식문서가 이거야 확인하고 다시 개선해줘."
-  taskType: modification
+  userMessage: "docs\REFACTORING_PLAN.md 리팩토링 계획에 따른 Phase 1-4 구현 작업"
+  taskType: refactor
   keywords:
-    - 공식문서
-    - 확인
-    - 개선
+    - refactor
+    - phase1-4
+    - code-quality
+    - test-coverage
 repo:
   gitBranch: "main"
   gitStatus: "dirty"
-  openFiles:
-    - .claude/README.md
-    - .claude/CLAUDE.md
-    - .claude/skills/moonshot-orchestrator/SKILL.md
-    - .claude/rules/workflow.md
-    - .claude/rules/quality.md
+  openFiles: []
   changedFiles:
-    - .claude/CLAUDE.md
-    - .claude/README.md
-    - install-claude.sh
-    - .claude/rules/agents/agent-definition.md
-    - .claude/rules/basic-principles.md
-    - .claude/rules/communication.md
-    - .claude/rules/context-management.md
-    - .claude/rules/docs/documentation.md
-    - .claude/rules/output-format.md
-    - .claude/rules/quality.md
-    - .claude/rules/skills/skill-definition.md
-    - .claude/rules/workflow.md
+    - src/discord-bot.ts
+    - src/gateway/server.ts
+    - src/gateway/ConnectionRateLimiter.ts
+    - src/gateway/GatewayAuthenticator.ts
+    - src/gateway/NodeCommunicator.ts
+    - src/orchestrator/TaskOrchestrator.ts
+    - src/orchestrator/ApprovalFlowCoordinator.ts
+    - src/orchestrator/SessionTaskMapper.ts
+    - src/orchestrator/index.ts
+    - src/tools/runtime/ToolRuntime.ts
+    - src/tools/runtime/ToolRegistry.ts
+    - src/tools/runtime/ToolExecutor.ts
+    - src/agents/executor.test.ts
+    - src/agents/planner.test.ts
+    - src/tools/index.ts
+    - src/tools/approval/handlers/discord-approval.ts
+    - src/tools/approval/handlers/slack-approval.ts
 signals:
-  hasContextMd: false
+  hasContextMd: true
   hasPendingQuestions: false
   requirementsClear: true
   implementationReady: true
   implementationComplete: true
-  hasMockImplementation: false
-  apiSpecConfirmed: false
+  reactProject: false
 estimates:
-  estimatedFiles: 1
-  estimatedLines: 90
-  estimatedTime: "30m"
-phase: verification
-complexity: simple
+  estimatedFiles: 28
+  estimatedLines: 5000
+  estimatedTime: "24-32h"
+phase: complete
+complexity: complex
 missingInfo: []
 decisions:
-  recommendedAgents: []
+  executionStrategy: sequential
+  rollbackPolicy: fix-in-place
+  recommendedAgents:
+    - completion-verifier
+    - codex-review-code
   skillChain:
-    - implementation-runner
-    - verify-changes.sh
+    - completion-verifier
+    - codex-review-code
+    - efficiency-tracker
+    - session-logger
   parallelGroups: []
 artifacts:
-  contextDocPath: .claude/docs/tasks/claude-memory-docs/context.md
+  tasksRoot: ".claude/docs/tasks"
+  contextDocPath: ".claude/docs/tasks/refactoring-phase1-4/context.md"
+  flowReportPath: ".claude/docs/tasks/refactoring-phase1-4/flow-report.md"
+  sessionLogPath: ".claude/docs/tasks/refactoring-phase1-4/session-logs/day-2026-02-02.md"
   verificationScript: .claude/agents/verification/verify-changes.sh
+tokenBudget:
+  specSummaryTrigger: 2000
+  splitTrigger: 5
+  contextMaxTokens: 8000
+  warningThreshold: 0.8
+projectMemory:
+  projectId: "moon-bot"
+  boundaryStatus: "not_checked"
+  boundary:
+    violations: []
+    needsApproval: []
+    reminders: []
+  relatedConventions: []
+  lastChecked: null
 notes:
-  - "taskType=modification, confidence=medium"
-  - "complexity=simple, estimated=heuristic"
-  - "implementation: update README with official memory guidance"
-  - "verification: not run"
+  - "Phase 1-4 완료: 기반정리, 핵심리팩토링, 테스트확대, 품질개선"
+  - "Build: PASSED (tsc)"
+  - "Tests: 516/516 PASSED (18 files)"
+  - "Coverage: 39.53% (목표 80% 미달)"
+  - "Code Review: APPROVE with WARNINGS (4개 MEDIUM 이슈)"
+  - "새 파일 9개, 수정 파일 19개"
+  - "console.log 정리 완료 (CLI 제외)"
+  - "any 타입 제거 완료 (0건)"
+  - "메모리 누스 방지 구현 완료 (TTL 1시간, cleanup 5분)"
+  - "Phase 5 권장: 파일 크기 추가 분할 (TaskOrchestrator 585줄, server 426줄, ToolRuntime 352줄)"

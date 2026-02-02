@@ -9,6 +9,8 @@ import type { Task, TaskState, TaskResponse } from "../types/index.js";
 import type { CreateTaskParams, OrchestratorConfig, ApprovalRequestEvent, ApprovalResolvedEvent } from "./types.js";
 import { TaskRegistry } from "./TaskRegistry.js";
 import { PerChannelQueue } from "./PerChannelQueue.js";
+import { ApprovalFlowCoordinator } from "./ApprovalFlowCoordinator.js";
+import { SessionTaskMapper } from "./SessionTaskMapper.js";
 import { createLogger, type Logger, type LayerLogger, runWithTraceAsync, getTraceContext } from "../utils/logger.js";
 import type { SystemConfig } from "../types/index.js";
 import type { Executor } from "../agents/executor.js";
@@ -41,16 +43,6 @@ export interface TaskStateChangeEvent {
 
 type StateChangeCallback = (event: TaskStateChangeEvent) => void;
 
-/**
- * Pending approval tracking.
- */
-interface PendingApproval {
-  taskId: string;
-  channelId: string;
-  toolId: string;
-  requestedAt: number;
-}
-
 export class TaskOrchestrator {
   private registry: TaskRegistry;
   private queue: PerChannelQueue<string>; // Queue stores task IDs
@@ -67,9 +59,8 @@ export class TaskOrchestrator {
   private toolkit: Toolkit | null = null;
   private sessionManager: SessionManager | null = null;
   private toolRuntime: ToolRuntime | null = null;
-  private pendingApprovals: Map<string, PendingApproval> = new Map();
-  // Map session IDs to task IDs for approval handling
-  private sessionTaskMap: Map<string, string> = new Map();
+  private approvalFlowCoordinator: ApprovalFlowCoordinator;
+  private sessionTaskMapper: SessionTaskMapper;
 
   constructor(
     systemConfig: SystemConfig,
@@ -92,6 +83,23 @@ export class TaskOrchestrator {
     this.sessionManager = deps?.sessionManager ?? null;
     this.toolRuntime = deps?.toolRuntime ?? null;
 
+    // Initialize approval flow coordinator
+    this.approvalFlowCoordinator = new ApprovalFlowCoordinator({
+      toolRuntime: this.toolRuntime,
+      registry: this.registry,
+      logger: this.logger,
+      responseCallback: (response) => this.sendResponse(response),
+      resumeCallback: (channelSessionId) => this.processChannel(channelSessionId),
+      cleanupCallback: (taskId) => {
+        this.cleanupSessionMappings(taskId);
+        this.queue.dequeue(this.getChannelSessionIdForTask(taskId));
+        this.queue.stopProcessing(this.getChannelSessionIdForTask(taskId));
+      },
+    });
+
+    // Initialize session task mapper with TTL
+    this.sessionTaskMapper = new SessionTaskMapper(this.logger, 3600000, 300000);
+
     // Subscribe to task events for debugging and state change emission
     this.registry.onTaskEvent((event) => {
       if (this.config.debugEvents) {
@@ -111,7 +119,29 @@ export class TaskOrchestrator {
     });
 
     // Setup approval event handlers
-    this.setupApprovalHandlers();
+    this.approvalFlowCoordinator.setup(this.sessionTaskMapper);
+
+    // Forward approval events from coordinator
+    this.approvalFlowCoordinator.onApprovalRequest((event) => {
+      // Emit approval request event to all registered callbacks
+      for (const callback of this.approvalCallbacks) {
+        try {
+          callback(event);
+        } catch (error) {
+          this.logger.error("Approval callback error", { error });
+        }
+      }
+    });
+    this.approvalFlowCoordinator.onApprovalResolved((event) => {
+      // Emit approval resolved event to all registered callbacks
+      for (const callback of this.approvalResolvedCallbacks) {
+        try {
+          callback(event);
+        } catch (error) {
+          this.logger.error("Approval resolved callback error", { error });
+        }
+      }
+    });
   }
 
   /**
@@ -147,32 +177,6 @@ export class TaskOrchestrator {
   }
 
   /**
-   * Emit approval request event to all registered callbacks.
-   */
-  private emitApprovalRequest(event: ApprovalRequestEvent): void {
-    for (const callback of this.approvalCallbacks) {
-      try {
-        callback(event);
-      } catch (error) {
-        this.logger.error("Approval callback error", { error });
-      }
-    }
-  }
-
-  /**
-   * Emit approval resolved event to all registered callbacks.
-   */
-  private emitApprovalResolved(event: ApprovalResolvedEvent): void {
-    for (const callback of this.approvalResolvedCallbacks) {
-      try {
-        callback(event);
-      } catch (error) {
-        this.logger.error("Approval resolved callback error", { error });
-      }
-    }
-  }
-
-  /**
    * Emit state change event to all registered callbacks.
    */
   private emitStateChange(event: TaskStateChangeEvent): void {
@@ -183,125 +187,6 @@ export class TaskOrchestrator {
         this.logger.error("State change callback error", { error });
       }
     }
-  }
-
-  /**
-   * Setup approval event handlers from ToolRuntime.
-   */
-  private setupApprovalHandlers(): void {
-    if (!this.toolRuntime) {
-      return;
-    }
-
-    // Listen for approval requested events
-    this.toolRuntime.on("approvalRequested", ({ requestId, sessionId, toolId, input }) => {
-      this.logger.info("Approval requested", { requestId, toolId, sessionId });
-
-      // Find the task associated with this session via sessionTaskMap
-      const taskId = this.sessionTaskMap.get(sessionId);
-      const task = taskId ? this.registry.get(taskId) : undefined;
-
-      if (task) {
-        // Transition task to PAUSED state
-        this.registry.updateState(task.id, "PAUSED");
-
-        // Track pending approval
-        this.pendingApprovals.set(requestId, {
-          taskId: task.id,
-          channelId: task.message.channelId,
-          toolId,
-          requestedAt: Date.now(),
-        });
-
-        // Notify about approval request via response callback
-        this.sendResponse({
-          taskId: task.id,
-          channelId: task.message.channelId,
-          text: `승인 필요: 도구 '${toolId}' 실행을 위한 승인이 필요합니다.`,
-          status: "pending",
-          metadata: {
-            state: "PAUSED",
-            approvalRequestId: requestId,
-            toolId,
-          },
-        });
-
-        // Emit approval request event for Gateway to broadcast
-        this.emitApprovalRequest({
-          taskId: task.id,
-          channelId: task.message.channelId,
-          toolId,
-          input,
-          requestId,
-        });
-      }
-    });
-
-    // Listen for approval resolved events
-    this.toolRuntime.on("approvalResolved", ({ requestId, approved }) => {
-      this.logger.info("Approval resolved", { requestId, approved });
-
-      const pending = this.pendingApprovals.get(requestId);
-      if (!pending) {
-        return;
-      }
-
-      const task = this.registry.get(pending.taskId);
-      if (!task) {
-        this.pendingApprovals.delete(requestId);
-        return;
-      }
-
-      this.pendingApprovals.delete(requestId);
-
-      if (approved) {
-        // Resume task: transition back to RUNNING
-        this.registry.updateState(task.id, "RUNNING");
-
-        // Resume processing
-        this.processChannel(task.channelSessionId);
-
-        // Emit approval resolved event
-        this.emitApprovalResolved({
-          taskId: task.id,
-          channelId: task.message.channelId,
-          approved: true,
-          requestId,
-        });
-      } else {
-        // Approval denied: abort task
-        this.registry.updateState(task.id, "ABORTED", undefined, {
-          code: "APPROVAL_DENIED",
-          userMessage: "승인이 거부되어 작업이 중단되었습니다.",
-          internalMessage: `Tool ${pending.toolId} approval denied`,
-        });
-
-        // Send response
-        this.sendResponse({
-          taskId: task.id,
-          channelId: task.message.channelId,
-          text: "승인이 거부되어 작업이 중단되었습니다.",
-          status: "failed",
-          metadata: { state: "ABORTED" },
-        });
-
-        // Clean up session mappings and queue
-        this.cleanupSessionMappings(task.id);
-        this.queue.dequeue(task.channelSessionId);
-        this.queue.stopProcessing(task.channelSessionId);
-
-        // Process next task
-        this.processChannel(task.channelSessionId);
-
-        // Emit approval resolved event
-        this.emitApprovalResolved({
-          taskId: task.id,
-          channelId: task.message.channelId,
-          approved: false,
-          requestId,
-        });
-      }
-    });
   }
 
   /**
@@ -344,12 +229,7 @@ export class TaskOrchestrator {
       this.queue.stopProcessing(task.channelSessionId);
 
       // Cancel any pending approvals
-      for (const [requestId, pending] of this.pendingApprovals.entries()) {
-        if (pending.taskId === taskId) {
-          this.toolRuntime?.emit("approvalCancelled", { requestId });
-          this.pendingApprovals.delete(requestId);
-        }
-      }
+      this.approvalFlowCoordinator.cancelTaskApprovals(taskId);
 
       // Process next task in channel
       this.processChannel(task.channelSessionId);
@@ -419,39 +299,7 @@ export class TaskOrchestrator {
    * Called when user responds to an approval request.
    */
   grantApproval(taskId: string, approved: boolean): boolean {
-    const task = this.registry.get(taskId);
-    if (!task) {
-      return false;
-    }
-
-    // Only PAUSED tasks can be approved/denied
-    if (task.state !== "PAUSED") {
-      this.logger.warn("Cannot approve task not in PAUSED state", { taskId, state: task.state });
-      return false;
-    }
-
-    // Find the approval request for this task
-    let approvalRequestId: string | undefined;
-    for (const [requestId, pending] of this.pendingApprovals.entries()) {
-      if (pending.taskId === taskId) {
-        approvalRequestId = requestId;
-        break;
-      }
-    }
-
-    if (!approvalRequestId) {
-      this.logger.warn("No pending approval found for task", { taskId });
-      return false;
-    }
-
-    // Emit approval resolved event (triggers setupApprovalHandlers logic)
-    this.toolRuntime?.emit("approvalResolved", {
-      requestId: approvalRequestId,
-      approved,
-    });
-
-    this.logger.info("Approval processed", { taskId, approved });
-    return true;
+    return this.approvalFlowCoordinator.grantApproval(taskId, approved);
   }
 
   /**
@@ -463,12 +311,7 @@ export class TaskOrchestrator {
     toolId: string;
     requestedAt: number;
   }> {
-    return Array.from(this.pendingApprovals.values()).map((p) => ({
-      taskId: p.taskId,
-      channelId: p.channelId,
-      toolId: p.toolId,
-      requestedAt: p.requestedAt,
-    }));
+    return this.approvalFlowCoordinator.getPendingApprovals();
   }
 
   /**
@@ -528,7 +371,7 @@ export class TaskOrchestrator {
 
       // Track session to task mapping for approval handling
       if (result.sessionId) {
-        this.sessionTaskMap.set(result.sessionId, task.id);
+        this.sessionTaskMapper.set(result.sessionId, task.id);
       }
 
       // Clear timeout
@@ -629,7 +472,7 @@ export class TaskOrchestrator {
 
     // Set up session to task mapping BEFORE executing
     // This allows approvalRequested events to find the task during execution
-    this.sessionTaskMap.set(session.id, task.id);
+    this.sessionTaskMapper.set(session.id, task.id);
 
     // Add user message to session
     this.sessionManager.addMessage(session.id, {
@@ -709,18 +552,15 @@ export class TaskOrchestrator {
    * Call this when a task completes, fails, or is aborted.
    */
   private cleanupSessionMappings(taskId: string): void {
-    const sessionIdsToRemove: string[] = [];
-    for (const [sessionId, tid] of this.sessionTaskMap.entries()) {
-      if (tid === taskId) {
-        sessionIdsToRemove.push(sessionId);
-      }
-    }
-    for (const sessionId of sessionIdsToRemove) {
-      this.sessionTaskMap.delete(sessionId);
-    }
-    if (sessionIdsToRemove.length > 0) {
-      this.logger.debug("Cleaned up session mappings", { taskId, count: sessionIdsToRemove.length });
-    }
+    this.sessionTaskMapper.cleanupByTaskId(taskId);
+  }
+
+  /**
+   * Get channel session ID for a task.
+   */
+  private getChannelSessionIdForTask(taskId: string): string {
+    const task = this.registry.get(taskId);
+    return task?.channelSessionId ?? "";
   }
 
   /**
@@ -733,11 +573,11 @@ export class TaskOrchestrator {
     }
     this.processingTimers.clear();
 
-    // Clear session to task mapping
-    this.sessionTaskMap.clear();
+    // Shutdown session task mapper
+    this.sessionTaskMapper.shutdown();
 
-    // Clear pending approvals
-    this.pendingApprovals.clear();
+    // Shutdown approval flow coordinator
+    this.approvalFlowCoordinator.shutdown();
 
     this.logger.info("TaskOrchestrator shutdown");
   }

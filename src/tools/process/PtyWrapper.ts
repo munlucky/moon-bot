@@ -48,9 +48,19 @@ export interface WrappedProcess {
   onExit(callback: (code: number | null, signal?: number | null) => void): void;
 }
 
-// Dynamic PTY module reference (typed as any since it's optional)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let nodePty: any = null;
+// Dynamic PTY module reference (optional dependency)
+// Use typeof import() for type safety when module is loaded
+type NodePtyModule = {
+  spawn: (file: string, args: string[], options: {
+    name: string;
+    cols: number;
+    rows: number;
+    cwd: string;
+    env: Record<string, string>;
+  }) => IPty;
+};
+
+let nodePty: NodePtyModule | null = null;
 let ptyLoadAttempted = false;
 
 /**

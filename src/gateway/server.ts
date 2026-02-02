@@ -1,11 +1,15 @@
 // WebSocket Gateway Server
+//
+// Refactored to use:
+// - ConnectionRateLimiter: rate limiting (Phase 1)
+// - GatewayAuthenticator: authentication (Phase 2)
+// - NodeCommunicator: node communication (Phase 2)
 
 import { WebSocketServer, WebSocket } from "ws";
-import { randomUUID, timingSafeEqual, createHash } from "crypto";
+import { randomUUID } from "crypto";
 import type { SystemConfig, ClientInfo, ConnectParams, ChatMessage } from "../types/index.js";
 import { JsonRpcServer } from "./json-rpc.js";
 import { createLogger, type Logger, type LayerLogger, runWithTraceAsync } from "../utils/logger.js";
-import { ErrorSanitizer } from "../utils/error-sanitizer.js";
 import { ToolRuntime } from "../tools/runtime/ToolRuntime.js";
 import { createToolHandlers } from "./handlers/tools.handler.js";
 import { createChannelHandlers } from "./handlers/channel.handler.js";
@@ -16,107 +20,9 @@ import { TaskOrchestrator } from "../orchestrator/index.js";
 import { createGatewayTools, type Toolkit, type ToolkitWithResources } from "../tools/index.js";
 import { SessionManager } from "../sessions/manager.js";
 import { Executor } from "../agents/executor.js";
-
-/**
- * Rate limiter to prevent connection flooding.
- * Tracks connection attempts per IP address AND per token within a time window.
- * Dual-layer rate limiting prevents bypass via multiple IP addresses.
- */
-class ConnectionRateLimiter {
-  private attempts = new Map<string, number[]>();
-  private tokenAttempts = new Map<string, number[]>();
-  private readonly windowMs: number;
-  private readonly maxAttempts: number;
-
-  constructor(windowMs: number = 60000, maxAttempts: number = 10) {
-    this.windowMs = windowMs;
-    this.maxAttempts = maxAttempts;
-  }
-
-  /**
-   * Check if a connection is allowed from the given IP.
-   * @param ip IP address (or socket ID as fallback)
-   * @returns true if connection is allowed, false if rate limited
-   */
-  checkLimit(ip: string): boolean {
-    const now = Date.now();
-    const windowStart = now - this.windowMs;
-
-    // Get existing attempts for this IP
-    let attempts = this.attempts.get(ip) || [];
-
-    // Filter out attempts outside the time window
-    attempts = attempts.filter(timestamp => timestamp > windowStart);
-
-    // Check if limit exceeded
-    if (attempts.length >= this.maxAttempts) {
-      return false;
-    }
-
-    // Add current attempt
-    attempts.push(now);
-    this.attempts.set(ip, attempts);
-
-    return true;
-  }
-
-  /**
-   * Check if a token is within rate limits.
-   * Prevents bypass of IP-based rate limiting via multiple IPs.
-   * @param token Authentication token (first 8 chars for logging)
-   * @returns true if connection is allowed, false if rate limited
-   */
-  checkTokenLimit(token: string): boolean {
-    const now = Date.now();
-    const windowStart = now - this.windowMs;
-
-    // Hash token for storage (SHA-256 to prevent collisions)
-    const tokenHash = createHash('sha256').update(token).digest('hex');
-    let attempts = this.tokenAttempts.get(tokenHash) || [];
-
-    // Filter out attempts outside the time window
-    attempts = attempts.filter(timestamp => timestamp > windowStart);
-
-    // Check if limit exceeded
-    if (attempts.length >= this.maxAttempts) {
-      return false;
-    }
-
-    // Add current attempt
-    attempts.push(now);
-    this.tokenAttempts.set(tokenHash, attempts);
-
-    return true;
-  }
-
-  /**
-   * Clean up old entries to prevent memory leaks.
-   */
-  cleanup(): void {
-    const now = Date.now();
-    const windowStart = now - this.windowMs;
-
-    // Clean IP-based entries
-    for (const [ip, attempts] of this.attempts.entries()) {
-      const validAttempts = attempts.filter(timestamp => timestamp > windowStart);
-      if (validAttempts.length === 0) {
-        this.attempts.delete(ip);
-      } else {
-        this.attempts.set(ip, validAttempts);
-      }
-    }
-
-    // Clean token-based entries
-    for (const [tokenHash, attempts] of this.tokenAttempts.entries()) {
-      const validAttempts = attempts.filter(timestamp => timestamp > windowStart);
-      if (validAttempts.length === 0) {
-        this.tokenAttempts.delete(tokenHash);
-      } else {
-        this.tokenAttempts.set(tokenHash, validAttempts);
-      }
-    }
-  }
-}
+import { ConnectionRateLimiter } from "./ConnectionRateLimiter.js";
+import { GatewayAuthenticator } from "./GatewayAuthenticator.js";
+import { NodeCommunicator } from "./NodeCommunicator.js";
 
 export class GatewayServer {
   private wss: WebSocketServer | null = null;
@@ -126,7 +32,9 @@ export class GatewayServer {
   private config: SystemConfig;
   private logger: Logger;
   private layerLogger: LayerLogger;
+  private authenticator: GatewayAuthenticator;
   private rateLimiter: ConnectionRateLimiter;
+  private nodeCommunicator: NodeCommunicator;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private toolRuntime: ToolRuntime | null = null;
   private toolkit: Toolkit | null = null;
@@ -136,22 +44,20 @@ export class GatewayServer {
   private nodeSessionManager: NodeSessionManager;
   private nodeCommandValidator: NodeCommandValidator;
 
-  // Request-response correlation for node RPC
-  private pendingRequests = new Map<string, {
-    resolve: (value: unknown) => void;
-    reject: (error: Error) => void;
-    timeout: NodeJS.Timeout;
-  }>();
-
   constructor(config: SystemConfig, workspaceRoot?: string) {
     this.config = config;
     this.logger = createLogger(config);
     this.layerLogger = this.logger.forLayer("gateway");
     this.rpc = new JsonRpcServer();
-    this.rateLimiter = new ConnectionRateLimiter(
-      60000, // 1 minute window
-      10     // max 10 connections per minute per IP
-    );
+
+    // Initialize rate limiter
+    this.rateLimiter = new ConnectionRateLimiter({
+      windowMs: 60000, // 1 minute window
+      maxAttempts: 10, // max 10 connections per minute per IP
+    });
+
+    // Initialize authenticator (depends on rate limiter)
+    this.authenticator = new GatewayAuthenticator(config, this.rateLimiter);
 
     // Initialize node managers
     this.nodeSessionManager = new NodeSessionManager({
@@ -164,8 +70,14 @@ export class GatewayServer {
       maxArgvLength: 10000,
     });
 
+    // Initialize node communicator
+    this.nodeCommunicator = new NodeCommunicator({
+      nodeSessionManager: this.nodeSessionManager,
+      getSockets: () => this.sockets,
+      logger: this.logger,
+    });
+
     // Note: toolRuntime will be initialized from Toolkit in initializeDependencies()
-    // This ensures all tools are registered and available
     this.toolRuntime = null;
 
     this.initializeDependencies(workspaceRoot).then(() => {
@@ -233,12 +145,11 @@ export class GatewayServer {
     }
 
     // Set up NodeExecutor RPC sender
-    // NodeExecutor is stored in toolkit by createGatewayTools
     const nodeExecutor = (this.toolkit as unknown as ToolkitWithResources).nodeExecutor;
     if (nodeExecutor) {
       nodeExecutor.setRpcSender(
         (nodeId: string, method: string, params: unknown, options?: { timeoutMs?: number }) =>
-          this.sendToNodeAndWait(nodeId, method, params, options)
+          this.nodeCommunicator.sendToNodeAndWait(nodeId, method, params, options)
       );
       this.logger.info("NodeExecutor RPC sender configured");
     }
@@ -269,7 +180,6 @@ export class GatewayServer {
     // Register channel handlers
     const channelHandlers = createChannelHandlers(this.config, (newConfig) => {
       this.config = newConfig;
-      // Save config to file when updated via RPC
       saveConfig(newConfig).catch(error => {
         this.logger.error("Failed to save config", { error });
       });
@@ -281,7 +191,7 @@ export class GatewayServer {
       this.nodeSessionManager,
       this.nodeCommandValidator,
       this.config,
-      (nodeId, message) => this.sendToNode(nodeId, message)
+      (nodeId, message) => this.nodeCommunicator.sendToNode(nodeId, message)
     );
     this.rpc.registerBatch(nodesHandlers);
 
@@ -289,55 +199,8 @@ export class GatewayServer {
     this.rpc.register("connect", async (params) => {
       const { clientType, version, token } = params as ConnectParams;
 
-      // Validate auth if configured (safe check for empty gateway array)
-      const authConfig = this.config.gateways?.[0]?.auth;
-      if (authConfig?.tokens && Object.keys(authConfig.tokens).length > 0) {
-        if (!token) {
-          this.logger.warn("Connection attempt without token");
-          const sanitized = ErrorSanitizer.sanitizeWithCode(
-            new Error("Authentication required"),
-            'AUTH_MISSING_TOKEN'
-          );
-          throw new Error(sanitized.message);
-        }
-
-        // Check token-based rate limit (prevents IP bypass)
-        if (!this.rateLimiter.checkTokenLimit(token)) {
-          this.logger.warn(`Token rate limited`);
-          const sanitized = ErrorSanitizer.sanitizeWithCode(
-            new Error("Rate limit exceeded"),
-            'RATE_LIMIT_EXCEEDED'
-          );
-          throw new Error(sanitized.message);
-        }
-
-        // Use timing-safe comparison to prevent timing attacks
-        // Compare against VALUES (hashed tokens), not keys
-        // Must iterate ALL tokens to prevent timing leak via short-circuit
-        let isValidToken = false;
-        const validTokens = Object.values(authConfig.tokens);
-        for (const validToken of validTokens) {
-          try {
-            if (timingSafeEqual(
-              Buffer.from(validToken, 'hex'),
-              Buffer.from(token, 'hex')
-            )) {
-              isValidToken = true;
-            }
-          } catch {
-            // Length mismatch: continue checking, still takes same time
-          }
-        }
-
-        if (!isValidToken) {
-          this.logger.warn(`Invalid token attempt from ${clientType}`);
-          const sanitized = ErrorSanitizer.sanitizeWithCode(
-            new Error("Authentication failed"),
-            'AUTH_INVALID_TOKEN'
-          );
-          throw new Error(sanitized.message);
-        }
-      }
+      // Validate authentication
+      this.authenticator.validateToken(token ?? "");
 
       const clientId = randomUUID();
       const clientInfo: ClientInfo = {
@@ -357,15 +220,12 @@ export class GatewayServer {
     this.rpc.register("chat.send", async (params) => {
       const message = params as ChatMessage;
 
-      // Start trace context for this request flow
       return runWithTraceAsync("gateway", async () => {
         const startTime = Date.now();
         this.layerLogger.logInput("chat.send", { channelId: message.channelId, text: message.text });
 
-        // Generate channel session ID for per-channel queue mapping
         const channelSessionId = message.channelId;
 
-        // Delegate to TaskOrchestrator
         const { taskId, state } = this.orchestrator.createTask({
           message,
           channelSessionId,
@@ -380,7 +240,6 @@ export class GatewayServer {
     // session.get: Get session by ID
     this.rpc.register("session.get", async (params) => {
       const { sessionId } = params as { sessionId: string };
-      // Will be handled by session module
       return { sessionId, exists: false };
     });
 
@@ -430,7 +289,7 @@ export class GatewayServer {
       // Start periodic cleanup of rate limiter
       this.cleanupInterval = setInterval(() => {
         this.rateLimiter.cleanup();
-      }, 60000); // Every minute
+      }, 60000);
 
       this.wss.on("listening", () => {
         this.logger.info(`Gateway listening on ${host}:${port}`);
@@ -443,10 +302,7 @@ export class GatewayServer {
       });
 
       this.wss.on("connection", (ws, req) => {
-        // Generate socket ID first for rate limiting fallback
         const socketId = randomUUID();
-
-        // Extract IP address for rate limiting
         const ip = req.socket.remoteAddress || socketId;
 
         // Check rate limit
@@ -473,6 +329,7 @@ export class GatewayServer {
 
         ws.on("close", () => {
           this.sockets.delete(socketId);
+          this.nodeCommunicator.handleNodeDisconnect(socketId);
           this.logger.info(`WebSocket disconnected: ${socketId}`);
         });
 
@@ -489,13 +346,12 @@ export class GatewayServer {
     }
     this.wss?.close();
 
-    // Clean up rate limiter interval
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;
     }
 
-    // Shutdown orchestrator
+    this.nodeCommunicator.shutdown();
     this.orchestrator.shutdown();
 
     this.logger.info("Gateway stopped");
@@ -527,124 +383,6 @@ export class GatewayServer {
    */
   getNodeSessionManager(): NodeSessionManager {
     return this.nodeSessionManager;
-  }
-
-  /**
-   * Send a message to a specific node (one-way, no response handling).
-   * @param nodeId - Node ID to send message to
-   * @param message - Message to send
-   * @returns true if sent successfully
-   */
-  sendToNode(nodeId: string, message: unknown): boolean {
-    const node = this.nodeSessionManager.getNode(nodeId);
-    if (!node) {
-      return false;
-    }
-
-    const socket = this.sockets.get(node.socketId);
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      return false;
-    }
-
-    socket.send(JSON.stringify(message));
-    return true;
-  }
-
-  /**
-   * Send a message to a node and wait for response with correlation ID.
-   * @param nodeId - Node ID to send message to
-   * @param method - RPC method name
-   * @param params - RPC parameters
-   * @param options - Optional timeout configuration
-   * @returns Promise that resolves with response or rejects on timeout/error
-   */
-  async sendToNodeAndWait(
-    nodeId: string,
-    method: string,
-    params: unknown,
-    options: { timeoutMs?: number } = {}
-  ): Promise<unknown> {
-    // Generate correlation ID
-    const correlationId = crypto.randomUUID();
-
-    // Check node exists and is connected
-    const node = this.nodeSessionManager.getNode(nodeId);
-    if (!node) {
-      throw new Error("NODE_NOT_FOUND: Node not found or not paired");
-    }
-
-    if (node.status !== "paired") {
-      throw new Error(`NODE_NOT_AVAILABLE: Node is ${node.status}`);
-    }
-
-    // Set up timeout
-    const timeoutMs = options.timeoutMs ?? 30000; // 30s default
-
-    // Send request
-    const request = {
-      jsonrpc: "2.0",
-      id: correlationId,
-      method,
-      params,
-    };
-
-    const sent = this.sendToNode(nodeId, request);
-    if (!sent) {
-      throw new Error("NODE_UNREACHABLE: Unable to send message to node");
-    }
-
-    // Wait for response
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pendingRequests.delete(correlationId);
-        reject(new Error(`NODE_TIMEOUT: No response after ${timeoutMs}ms`));
-      }, timeoutMs);
-
-      this.pendingRequests.set(correlationId, { resolve, reject, timeout });
-    });
-  }
-
-  /**
-   * Handle response from node companion (called when receiving response message).
-   * @param message - JSON-RPC response message
-   */
-  handleNodeResponse(message: { id: string; result?: unknown; error?: { message: string } }): void {
-    const { id, result, error } = message;
-    const pending = this.pendingRequests.get(id);
-
-    if (!pending) {
-      // No pending request for this ID (might be already handled or unknown)
-      return;
-    }
-
-    clearTimeout(pending.timeout);
-    this.pendingRequests.delete(id);
-
-    if (error) {
-      pending.reject(new Error(error.message));
-    } else {
-      pending.resolve(result);
-    }
-  }
-
-  /**
-   * Handle node disconnection (rejects all pending requests for that node).
-   * @param socketId - WebSocket socket ID
-   */
-  handleNodeDisconnect(socketId: string): void {
-    // Mark node as offline
-    this.nodeSessionManager.markOffline(socketId);
-
-    // Find the node and reject all its pending requests
-    const node = this.nodeSessionManager.getNodeBySocket(socketId);
-    if (node) {
-      for (const [id, pending] of this.pendingRequests.entries()) {
-        // Reject all pending requests (conservative approach - node disconnected)
-        pending.reject(new Error("NODE_DISCONNECTED: Node companion disconnected"));
-        clearTimeout(pending.timeout);
-        this.pendingRequests.delete(id);
-      }
-    }
   }
 
   broadcast(method: string, params?: unknown): void {

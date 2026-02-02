@@ -1,9 +1,16 @@
-// Tool execution runtime with validation, approval, result formatting, and retry tracking
+/**
+ * Tool execution runtime with validation, approval, result formatting, and retry tracking.
+ *
+ * Refactored to use Facade pattern:
+ * - ToolRegistry: manages tool registration
+ * - ToolExecutor: handles tool execution
+ * - ToolRuntime: coordinates and provides public API
+ */
 
-import { randomUUID } from "crypto";
 import { EventEmitter } from "events";
 import type { ToolSpec, ToolContext, ToolResult, SystemConfig } from "../../types/index.js";
-import { SchemaValidator } from "./SchemaValidator.js";
+import { ToolRegistry } from "./ToolRegistry.js";
+import { ToolExecutor, type RuntimeConfig } from "./ToolExecutor.js";
 import { ApprovalManager } from "./ApprovalManager.js";
 import { createLogger, type Logger } from "../../utils/logger.js";
 
@@ -20,21 +27,18 @@ export interface ToolInvocation {
   parentInvocationId?: string;  // Track original invocation for retries
 }
 
-export interface RuntimeConfig {
-  workspaceRoot: string;
-  defaultTimeoutMs: number;
-  maxConcurrent: number;
-  enableApprovals: boolean;
-}
-
 export class ToolRuntime extends EventEmitter {
-  private tools = new Map<string, ToolSpec>();
+  private registry: ToolRegistry;
+  private executor: ToolExecutor;
   private invocations = new Map<string, ToolInvocation>();
   private approvalManager: ApprovalManager;
   private config: RuntimeConfig;
   private systemConfig: SystemConfig;
   private logger: Logger;
   private runningCount = 0;
+  private cleanupInterval: NodeJS.Timeout | null = null;
+  private readonly CLEANUP_INTERVAL_MS = 300000; // 5 minutes
+  private readonly INVOCATION_TTL_MS = 3600000; // 1 hour
 
   static readonly Events = {
     APPROVAL_REQUESTED: "approval.requested",
@@ -51,42 +55,85 @@ export class ToolRuntime extends EventEmitter {
       enableApprovals: runtimeConfig.enableApprovals ?? true,
     };
     this.logger = createLogger(systemConfig);
+    this.registry = new ToolRegistry(this.logger);
     this.approvalManager = new ApprovalManager();
+
+    // Initialize ToolExecutor with dependencies
+    this.executor = new ToolExecutor({
+      systemConfig: this.systemConfig,
+      config: this.config,
+      approvalManager: this.approvalManager,
+      logger: this.logger,
+      onInvocationCreated: (invocation) => {
+        this.invocations.set(invocation.id, invocation);
+      },
+      onInvocationUpdated: (invocation) => {
+        this.invocations.set(invocation.id, invocation);
+      },
+      onRunningCountChange: (delta) => {
+        this.runningCount += delta;
+      },
+    });
+
+    // Start automatic cleanup interval
+    this.startCleanupInterval();
+  }
+
+  /**
+   * Start the automatic cleanup interval for old invocations.
+   */
+  private startCleanupInterval(): void {
+    if (this.cleanupInterval) {
+      return; // Already started
+    }
+
+    this.cleanupInterval = setInterval(() => {
+      this.cleanup(this.INVOCATION_TTL_MS);
+    }, this.CLEANUP_INTERVAL_MS);
+
+    this.logger.debug("ToolRuntime cleanup interval started", {
+      intervalMs: this.CLEANUP_INTERVAL_MS,
+      ttlMs: this.INVOCATION_TTL_MS,
+    });
+  }
+
+  /**
+   * Stop the automatic cleanup interval.
+   */
+  private stopCleanupInterval(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+      this.logger.debug("ToolRuntime cleanup interval stopped");
+    }
   }
 
   /**
    * Register a tool with the runtime.
    */
   register(spec: ToolSpec): void {
-    this.tools.set(spec.id, spec);
-    this.logger.info(`Tool registered: ${spec.id}`);
+    this.registry.register(spec);
   }
 
   /**
    * Unregister a tool from the runtime.
    */
   unregister(id: string): void {
-    this.tools.delete(id);
-    this.logger.info(`Tool unregistered: ${id}`);
+    this.registry.unregister(id);
   }
 
   /**
    * Get a tool by ID.
    */
   getTool(id: string): ToolSpec | undefined {
-    return this.tools.get(id);
+    return this.registry.get(id);
   }
 
   /**
    * List all registered tools.
    */
   listTools(): Array<{ id: string; description: string; schema: object; requiresApproval?: boolean }> {
-    return Array.from(this.tools.values()).map((tool) => ({
-      id: tool.id,
-      description: tool.description,
-      schema: tool.schema,
-      requiresApproval: tool.requiresApproval,
-    }));
+    return this.registry.list();
   }
 
   /**
@@ -114,6 +161,13 @@ export class ToolRuntime extends EventEmitter {
   }
 
   /**
+   * Get the current number of running tool invocations.
+   */
+  getRunningCount(): number {
+    return this.runningCount;
+  }
+
+  /**
    * Invoke a tool with input validation and timeout.
    */
   async invoke(
@@ -125,7 +179,7 @@ export class ToolRuntime extends EventEmitter {
     retryCount: number = 0,
     parentInvocationId?: string
   ): Promise<{ invocationId: string; result?: ToolResult; awaitingApproval?: boolean }> {
-    const tool = this.tools.get(toolId);
+    const tool = this.registry.get(toolId);
     if (!tool) {
       return {
         invocationId: "",
@@ -149,138 +203,29 @@ export class ToolRuntime extends EventEmitter {
       };
     }
 
-    // Validate input
-    const validationResult = SchemaValidator.validateJsonSchema(tool.schema, input);
-    if (!validationResult.success) {
-      return {
-        invocationId: "",
-        result: {
-          ok: false,
-          error: {
-            code: "INVALID_INPUT",
-            message: "Input validation failed",
-            details: validationResult.errors,
-          },
-          meta: { durationMs: 0 },
-        },
-      };
-    }
-
-    const invocationId = randomUUID();
-    const invocation: ToolInvocation = {
-      id: invocationId,
-      toolId,
+    const result = await this.executor.execute(
+      tool,
       sessionId,
       input,
-      status: "running",
-      startTime: Date.now(),
+      agentId,
+      userId,
       retryCount,
       parentInvocationId,
-    };
-    this.invocations.set(invocationId, invocation);
-    this.runningCount++;
+      true // checkApproval
+    );
 
-    // Log retry attempt
-    if (retryCount > 0) {
-      this.logger.info(`Tool retry invocation: ${toolId}`, {
-        invocationId,
-        retryCount,
-        parentInvocationId,
+    // Emit approval requested event if awaiting approval
+    if (result.awaitingApproval) {
+      this.emit(ToolRuntime.Events.APPROVAL_REQUESTED, {
+        invocationId: result.invocationId,
+        toolId,
+        input,
+        sessionId,
+        userId,
       });
     }
 
-    try {
-      // Check approval for dangerous tools
-      if (tool.requiresApproval && this.config.enableApprovals) {
-        await this.approvalManager.loadConfig();
-
-        const { approvalRequired } = await this.checkToolApproval(
-          toolId,
-          input,
-          validationResult.data as Record<string, unknown>
-        );
-
-        if (approvalRequired) {
-          invocation.status = "awaiting_approval";
-
-          // Emit event for ApprovalFlowManager
-          this.emit(ToolRuntime.Events.APPROVAL_REQUESTED, {
-            invocationId,
-            toolId,
-            input,
-            sessionId,
-            userId,
-          });
-
-          return { invocationId, awaitingApproval: true };
-        }
-      }
-
-      // Execute tool
-      const ctx = this.createContext(sessionId, agentId, userId);
-      const startTime = Date.now();
-
-      // Create timeout with cleanup
-      let timeoutId: NodeJS.Timeout | undefined;
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(
-          () => reject(new Error("Tool execution timeout")),
-          ctx.policy.timeoutMs
-        );
-      });
-
-      try {
-        const result = await Promise.race([
-          tool.run(validationResult.data as never, ctx),
-          timeoutPromise,
-        ]);
-
-        const durationMs = Date.now() - startTime;
-
-        // Format result
-        const formattedResult: ToolResult = {
-          ok: true,
-          data: result,
-          meta: { durationMs },
-        };
-
-        invocation.status = "completed";
-        invocation.endTime = Date.now();
-        invocation.result = formattedResult;
-        this.runningCount--;
-
-        this.logger.info(`Tool invoked: ${toolId}`, { durationMs, sessionId, retryCount });
-
-        return { invocationId, result: formattedResult };
-      } finally {
-        // Always clear timeout to prevent memory leaks
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
-      }
-    } catch (error) {
-      this.runningCount--;
-
-      const durationMs = Date.now() - invocation.startTime;
-      invocation.status = "failed";
-      invocation.endTime = Date.now();
-
-      const errorResult: ToolResult = {
-        ok: false,
-        error: {
-          code: "EXECUTION_ERROR",
-          message: error instanceof Error ? error.message : "Unknown error",
-          details: error instanceof Error ? error.stack : undefined,
-        },
-        meta: { durationMs },
-      };
-
-      invocation.result = errorResult;
-
-      this.logger.error(`Tool execution failed: ${toolId}`, { error, retryCount });
-
-      return { invocationId, result: errorResult };
-    }
+    return result;
   }
 
   /**
@@ -314,11 +259,17 @@ export class ToolRuntime extends EventEmitter {
         meta: { durationMs: 0 },
       };
 
+      // Emit approval resolved event
+      this.emit(ToolRuntime.Events.APPROVAL_RESOLVED, {
+        requestId: invocationId,
+        approved: false,
+      });
+
       return invocation.result;
     }
 
     // Re-execute with approval granted
-    const tool = this.tools.get(invocation.toolId);
+    const tool = this.registry.get(invocation.toolId);
     if (!tool) {
       return {
         ok: false,
@@ -327,73 +278,15 @@ export class ToolRuntime extends EventEmitter {
       };
     }
 
-    invocation.status = "running";
-    this.runningCount++;
+    const result = await this.executor.reExecuteAfterApproval(tool, invocation);
 
-    try {
-      const ctx = this.createContext(invocation.sessionId, "", "");
-      const startTime = Date.now();
+    // Emit approval resolved event
+    this.emit(ToolRuntime.Events.APPROVAL_RESOLVED, {
+      requestId: invocationId,
+      approved: true,
+    });
 
-      // Create timeout with cleanup
-      let timeoutId: NodeJS.Timeout | undefined;
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(
-          () => reject(new Error("Tool execution timeout")),
-          ctx.policy.timeoutMs
-        );
-      });
-
-      const validationResult = SchemaValidator.validateJsonSchema(tool.schema, invocation.input);
-      if (!validationResult.success) {
-        throw new Error("Invalid input");
-      }
-
-      try {
-        const result = await Promise.race([
-          tool.run(validationResult.data as never, ctx),
-          timeoutPromise,
-        ]);
-
-        const durationMs = Date.now() - startTime;
-
-        const formattedResult: ToolResult = {
-          ok: true,
-          data: result,
-          meta: { durationMs },
-        };
-
-        invocation.status = "completed";
-        invocation.endTime = Date.now();
-        invocation.result = formattedResult;
-        this.runningCount--;
-
-        return formattedResult;
-      } finally {
-        // Always clear timeout to prevent memory leaks
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
-      }
-    } catch (error) {
-      this.runningCount--;
-
-      const durationMs = Date.now() - invocation.startTime;
-      invocation.status = "failed";
-      invocation.endTime = Date.now();
-
-      const errorResult: ToolResult = {
-        ok: false,
-        error: {
-          code: "EXECUTION_ERROR",
-          message: error instanceof Error ? error.message : "Unknown error",
-        },
-        meta: { durationMs },
-      };
-
-      invocation.result = errorResult;
-
-      return errorResult;
-    }
+    return result;
   }
 
   /**
@@ -403,53 +296,6 @@ export class ToolRuntime extends EventEmitter {
     return Array.from(this.invocations.values()).filter(
       (inv) => inv.status === "awaiting_approval"
     );
-  }
-
-  /**
-   * Create a ToolContext for tool execution.
-   */
-  private createContext(sessionId: string, agentId: string, userId: string): ToolContext {
-    return {
-      sessionId,
-      agentId,
-      userId,
-      config: this.systemConfig,
-      workspaceRoot: this.config.workspaceRoot,
-      policy: {
-        allowlist: this.approvalManager.getConfig()?.allowlist.commands ?? [],
-        denylist: this.approvalManager.getConfig()?.denylist.patterns ?? [],
-        maxBytes: 2 * 1024 * 1024, // 2MB default
-        timeoutMs: this.config.defaultTimeoutMs,
-      },
-    };
-  }
-
-  /**
-   * Check if tool requires approval.
-   */
-  private async checkToolApproval(
-    toolId: string,
-    rawInput: unknown,
-    validatedInput: Record<string, unknown>
-  ): Promise<{ approvalRequired: boolean; approvalData?: unknown }> {
-    // Special handling for system.run tool
-    if (toolId === "system.run") {
-      const command = validatedInput.argv as string | string[];
-      const cwd = validatedInput.cwd as string;
-
-      const approval = await this.approvalManager.checkApproval(
-        command,
-        cwd,
-        this.config.workspaceRoot
-      );
-
-      return {
-        approvalRequired: !approval.approved,
-        approvalData: approval.reason,
-      };
-    }
-
-    return { approvalRequired: false };
   }
 
   /**
@@ -492,5 +338,14 @@ export class ToolRuntime extends EventEmitter {
       byStatus,
       avgRetryCount: invocations.length > 0 ? totalRetryCount / invocations.length : 0,
     };
+  }
+
+  /**
+   * Shutdown the runtime and clean up resources.
+   */
+  shutdown(): void {
+    this.stopCleanupInterval();
+    this.invocations.clear();
+    this.logger.info("ToolRuntime shutdown complete");
   }
 }

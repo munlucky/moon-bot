@@ -12,6 +12,7 @@ import type {
   SlackBlockMessage,
 } from "../types.js";
 import type { SlackAdapter } from "../../../channels/slack.js";
+import { createLogger, type Logger } from "../../../utils/logger.js";
 
 /**
  * Create approval button elements for Slack Block Kit.
@@ -235,10 +236,12 @@ export class SlackApprovalHandler implements ApprovalHandler {
   private adapter: SlackAdapter | null = null;
   private channelId: string | null = null;
   private messageStore: Map<string, { channelId: string; messageTs: string }> = new Map();
+  private logger: Logger;
 
   constructor(adapter?: SlackAdapter, channelId?: string) {
     this.adapter = adapter ?? null;
     this.channelId = channelId ?? null;
+    this.logger = createLogger();
   }
 
   /**
@@ -269,7 +272,7 @@ export class SlackApprovalHandler implements ApprovalHandler {
     const targetChannelId = this.channelId;
 
     if (!targetChannelId) {
-      console.warn(`[SlackApproval] No channel ID configured for approval request ${request.id}`);
+      this.logger.warn(`[SlackApproval] No channel ID configured for approval request ${request.id}`);
       return;
     }
 
@@ -284,7 +287,7 @@ export class SlackApprovalHandler implements ApprovalHandler {
           messageTs,
         });
 
-        console.log(`[SlackApproval] Approval request sent:`, {
+        this.logger.info(`[SlackApproval] Approval request sent:`, {
           fallbackText: blocks.fallbackText,
           requestId: request.id,
           toolId: request.toolId,
@@ -292,7 +295,7 @@ export class SlackApprovalHandler implements ApprovalHandler {
         });
       }
     } catch (error) {
-      console.error(`[SlackApproval] Failed to send approval request:`, {
+      this.logger.error(`[SlackApproval] Failed to send approval request:`, {
         error: error instanceof Error ? error.message : String(error),
         requestId: request.id,
       });
@@ -312,7 +315,7 @@ export class SlackApprovalHandler implements ApprovalHandler {
     // Get stored message reference
     const messageRef = this.messageStore.get(request.id);
     if (!messageRef) {
-      console.warn(`[SlackApproval] No message reference for approval update ${request.id}`);
+      this.logger.warn(`[SlackApproval] No message reference for approval update ${request.id}`);
       return;
     }
 
@@ -325,7 +328,7 @@ export class SlackApprovalHandler implements ApprovalHandler {
       );
 
       if (success) {
-        console.log(`[SlackApproval] Approval update sent:`, {
+        this.logger.info(`[SlackApproval] Approval update sent:`, {
           fallbackText: blocks.fallbackText,
           status: request.status,
           requestId: request.id,
@@ -335,7 +338,7 @@ export class SlackApprovalHandler implements ApprovalHandler {
         this.messageStore.delete(request.id);
       }
     } catch (error) {
-      console.error(`[SlackApproval] Failed to send approval update:`, {
+      this.logger.error(`[SlackApproval] Failed to send approval update:`, {
         error: error instanceof Error ? error.message : String(error),
         requestId: request.id,
       });

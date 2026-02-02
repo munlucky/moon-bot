@@ -7,6 +7,7 @@ import type {
   DiscordEmbedMessage,
 } from "../types.js";
 import type { DiscordAdapter } from "../../../channels/discord.js";
+import { createLogger, type Logger } from "../../../utils/logger.js";
 
 /**
  * Create approval button components for Discord.
@@ -180,10 +181,12 @@ export class DiscordApprovalHandler implements ApprovalHandler {
   private adapter: DiscordAdapter | null = null;
   private channelId: string | null = null;
   private messageStore: Map<string, { channelId: string; messageId: string }> = new Map();
+  private logger: Logger;
 
   constructor(adapter?: DiscordAdapter, channelId?: string) {
     this.adapter = adapter ?? null;
     this.channelId = channelId ?? null;
+    this.logger = createLogger();
   }
 
   /**
@@ -214,7 +217,7 @@ export class DiscordApprovalHandler implements ApprovalHandler {
     const targetChannelId = this.channelId;
 
     if (!targetChannelId) {
-      console.warn(`[DiscordApproval] No channel ID configured for approval request ${request.id}`);
+      this.logger.warn(`[DiscordApproval] No channel ID configured for approval request ${request.id}`);
       return;
     }
 
@@ -229,7 +232,7 @@ export class DiscordApprovalHandler implements ApprovalHandler {
           messageId: message.id,
         });
 
-        console.log(`[DiscordApproval] Approval request sent:`, {
+        this.logger.info(`[DiscordApproval] Approval request sent:`, {
           title: embed.title,
           requestId: request.id,
           toolId: request.toolId,
@@ -237,7 +240,7 @@ export class DiscordApprovalHandler implements ApprovalHandler {
         });
       }
     } catch (error) {
-      console.error(`[DiscordApproval] Failed to send approval request:`, {
+      this.logger.error(`[DiscordApproval] Failed to send approval request:`, {
         error: error instanceof Error ? error.message : String(error),
         requestId: request.id,
       });
@@ -257,7 +260,7 @@ export class DiscordApprovalHandler implements ApprovalHandler {
     // Get stored message reference
     const messageRef = this.messageStore.get(request.id);
     if (!messageRef) {
-      console.warn(`[DiscordApproval] No message reference for approval update ${request.id}`);
+      this.logger.warn(`[DiscordApproval] No message reference for approval update ${request.id}`);
       return;
     }
 
@@ -270,7 +273,7 @@ export class DiscordApprovalHandler implements ApprovalHandler {
       );
 
       if (success) {
-        console.log(`[DiscordApproval] Approval update sent:`, {
+        this.logger.info(`[DiscordApproval] Approval update sent:`, {
           title: embed.title,
           status: request.status,
           requestId: request.id,
@@ -280,7 +283,7 @@ export class DiscordApprovalHandler implements ApprovalHandler {
         this.messageStore.delete(request.id);
       }
     } catch (error) {
-      console.error(`[DiscordApproval] Failed to send approval update:`, {
+      this.logger.error(`[DiscordApproval] Failed to send approval update:`, {
         error: error instanceof Error ? error.message : String(error),
         requestId: request.id,
       });

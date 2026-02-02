@@ -112,6 +112,18 @@
 {"type":"entity","name":"moonbot::Convention::VitestESMMocking","entityType":"convention","observations":["ESM 환경에서는 vi.mock 대신 vi.spyOn 사용","vi.doMock은 hoisting 미작동으로 이미 import된 모듈에 적용 안 됨","sessionManager.createSession 같은 메서드를 직접 mock하는 것이 안정적"]}
 {"type":"entity","name":"moonbot::Convention::E2ETestNaming","entityType":"convention","observations":["E2E 테스트 ID: E01-E05 (승인 시나리오)","파일명: {feature}-flow.spec.ts (예: slack-approval-flow.spec.ts)","테스트 설명: should {action} (예: should complete tool approval flow)"]}
 {"type":"entity","name":"moonbot::Feature::E2ETests","entityType":"feature","observations":["단위 테스트 459개 완료 후 E2E 테스트 구현","Vitest 기반 E2E 테스트 프레임워크","Gateway fixture로 테스트 서버 시작/정지","MSW로 외부 API mock","17개 E2E 테스트 통과"]}
+{"type":"entity","name":"moon-bot::Component::ConnectionRateLimiter","entityType":"component","observations":["연결 속도 제한 담당 (IP + Token 이중 레이어)","TTL 기반 자동 cleanup","1분 윈도우, 기본 10회 제한","위치: src/gateway/ConnectionRateLimiter.ts"]}
+{"type":"entity","name":"moon-bot::Component::GatewayAuthenticator","entityType":"component","observations":["게이트웨이 인증 담당","timing-safe 비교로 타이밍 어택 방지","토큰 해싱 지원","위치: src/gateway/GatewayAuthenticator.ts"]}
+{"type":"entity","name":"moon-bot::Component::NodeCommunicator","entityType":"component","observations":["노드 간 통신 담당","request-response 패턴 지원","timeout 처리 포함","위치: src/gateway/NodeCommunicator.ts"]}
+{"type":"entity","name":"moon-bot::Component::ApprovalFlowCoordinator","entityType":"component","observations":["승인 플로우 관리","approvalRequested/resolved 이벤트 처리","pending 승인 목록 관리","위치: src/orchestrator/ApprovalFlowCoordinator.ts"]}
+{"type":"entity","name":"moon-bot::Component::SessionTaskMapper","entityType":"component","observations":["세션-태스크 매핑 담당","TTL 1시간, 5분 간격 cleanup","메모리 누수 방지","위치: src/orchestrator/SessionTaskMapper.ts"]}
+{"type":"entity","name":"moon-bot::Component::ToolRegistry","entityType":"component","observations":["도구 등록/관리 담당","register/unregister/get/list 메서드","위치: src/tools/runtime/ToolRegistry.ts"]}
+{"type":"entity","name":"moon-bot::Component::ToolExecutor","entityType":"component","observations":["도구 실행 로직 담당","Promise.race 기반 timeout 처리","running 상태 추적","위치: src/tools/runtime/ToolExecutor.ts"]}
+{"type":"entity","name":"moon-bot::Test::ExecutorTest","entityType":"test","observations":["Executor 테스트 (22 tests)","64.16% 커버리지","위치: src/agents/executor.test.ts"]}
+{"type":"entity","name":"moon-bot::Test::PlannerTest","entityType":"test","observations":["Planner 테스트 (52 tests)","95.91% 커버리지","위치: src/agents/planner.test.ts"]}
+{"type":"entity","name":"moon-bot::Refactoring::Phase1-4","entityType":"milestone","observations":["리팩토링 Phase 1-4 완료 (2026-02-02)","9개 신규 파일, 19개 수정 파일","516 tests 전체 통과","console.log 정리 완료","any 타입 제거 완료","메모리 누수 방지 구현 (TTL 1시간)","코드 리뷰 APPROVE (4개 MEDIUM 경고)","커버리지 39.53% (목표 80% 미달이나 핵심 모듈 양호)"]}
+{"type":"entity","name":"moon-bot::Convention::Naming","entityType":"convention","observations":["컴포넌트/클래스: PascalCase","변수/함수: camelCase","상수: SCREAMING_SNAKE_CASE","타입/인터페이스: PascalCase","파일명: PascalCase.ts (클래스), camelCase.ts (유틸리티)"]}
+{"type":"entity","name":"moon-bot::Convention::FileStructure","entityType":"convention","observations":["파일 크기: 200-400줄 (최대 800줄)","함수 길이: 50줄 이하","중첩 깊이: 4레벨 이하","단일 책임 원칙 준수"]}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Channels","relationType":"manages"}
 {"type":"relation","from":"moonbot::Component::Gateway","to":"moonbot::Component::Agents","relationType":"orchestrates"}
 {"type":"relation","from":"moonbot::Component::Agents","to":"moonbot::Component::Tools","relationType":"uses"}
@@ -185,3 +197,13 @@
 {"type":"relation","from":"moonbot::Component::ProcessToolTest","to":"moonbot::Convention::VitestESMMocking","relationType":"uses"}
 {"type":"relation","from":"moonbot::Component::E2ETestFramework","to":"moonbot::Convention::VitestESMMocking","relationType":"uses"}
 {"type":"relation","from":"moonbot::Feature::E2ETests","to":"moonbot::Component::E2ETestFramework","relationType":"implements"}
+{"type":"relation","from":"moon-bot::Component::TaskOrchestrator","to":"moon-bot::Component::ApprovalFlowCoordinator","relationType":"uses"}
+{"type":"relation","from":"moon-bot::Component::TaskOrchestrator","to":"moon-bot::Component::SessionTaskMapper","relationType":"uses"}
+{"type":"relation","from":"moon-bot::Component::ToolRuntime","to":"moon-bot::Component::ToolRegistry","relationType":"delegates_to"}
+{"type":"relation","from":"moon-bot::Component::ToolRuntime","to":"moon-bot::Component::ToolExecutor","relationType":"delegates_to"}
+{"type":"relation","from":"moon-bot::Component::GatewayServer","to":"moon-bot::Component::ConnectionRateLimiter","relationType":"uses"}
+{"type":"relation","from":"moon-bot::Component::GatewayServer","to":"moon-bot::Component::GatewayAuthenticator","relationType":"uses"}
+{"type":"relation","from":"moon-bot::Component::GatewayServer","to":"moon-bot::Component::NodeCommunicator","relationType":"uses"}
+{"type":"relation","from":"moon-bot::Component::ApprovalFlowCoordinator","to":"moon-bot::Component::ToolRuntime","relationType":"depends_on"}
+{"type":"relation","from":"moon-bot::Test::ExecutorTest","to":"moon-bot::Component::Executor","relationType":"tests"}
+{"type":"relation","from":"moon-bot::Test::PlannerTest","to":"moon-bot::Component::Planner","relationType":"tests"}

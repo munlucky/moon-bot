@@ -23,7 +23,6 @@ export function loadConfig(configPath?: string): SystemConfig {
     return applyEnvironmentVariables(merged);
   } catch {
     // Error loading config, using defaults
-    console.warn(`Failed to load config from ${filePath}, using defaults`);
     const defaults = getDefaultConfig();
     return applyEnvironmentVariables(defaults);
   }

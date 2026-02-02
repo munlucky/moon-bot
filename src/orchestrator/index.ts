@@ -8,6 +8,8 @@
 export { TaskOrchestrator } from "./TaskOrchestrator.js";
 export { TaskRegistry } from "./TaskRegistry.js";
 export { PerChannelQueue } from "./PerChannelQueue.js";
+export { ApprovalFlowCoordinator } from "./ApprovalFlowCoordinator.js";
+export { SessionTaskMapper } from "./SessionTaskMapper.js";
 export {
   type TaskState,
   type Task,
@@ -16,3 +18,4 @@ export {
   type CreateTaskParams,
   type TaskResult,
 } from "./types.js";
+export type { PendingApproval } from "./ApprovalFlowCoordinator.js";

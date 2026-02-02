@@ -164,7 +164,7 @@ export class TaskRegistry {
       try {
         listener(event);
       } catch (error) {
-        console.error("Task event listener error:", error);
+        // Silent: listener errors should not break event emission
       }
     }
   }

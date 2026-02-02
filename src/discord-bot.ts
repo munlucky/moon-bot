@@ -6,20 +6,23 @@
 import { loadConfig } from "./config/index.js";
 import { DiscordAdapter } from "./channels/discord.js";
 import type { SystemConfig } from "./types/index.js";
+import { createLogger, type LayerLogger } from "./utils/logger.js";
 
 async function main(): Promise<void> {
   const config: SystemConfig = loadConfig();
+  const logger = createLogger(config);
+  const layerLogger = logger.forLayer("channel");
 
   // Check if Discord channel is configured
   const discordChannel = config.channels.find(c => c.type === "discord");
   if (!discordChannel || !discordChannel.enabled) {
-    console.error("Discord channel not configured or disabled");
+    logger.error("Discord channel not configured or disabled");
     process.exit(1);
   }
 
   if (!discordChannel.token) {
-    console.error("Discord token not configured");
-    console.error("Run: moonbot channel add <id> --type discord --token <token>");
+    logger.error("Discord token not configured");
+    logger.error("Run: moonbot channel add <id> --type discord --token <token>");
     process.exit(1);
   }
 
@@ -28,19 +31,20 @@ async function main(): Promise<void> {
 
   // Handle shutdown
   process.on("SIGINT", () => {
-    console.log("\nShutting down Discord bot...");
+    layerLogger.info("Shutting down Discord bot...");
     bot.stop();
     process.exit(0);
   });
 
   await bot.start();
-  console.log("Discord bot started - press Ctrl+C to stop");
+  layerLogger.info("Discord bot started - press Ctrl+C to stop");
 
   // Keep process alive
   process.stdin.resume();
 }
 
 main().catch(error => {
-  console.error("Failed to start Discord bot:", error);
+  const logger = createLogger();
+  logger.error("Failed to start Discord bot:", { error });
   process.exit(1);
 });

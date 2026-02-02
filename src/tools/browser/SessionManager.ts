@@ -173,7 +173,7 @@ export class SessionManager {
       await session.page.close();
       await session.context.close();
     } catch (err) {
-      console.debug("[BrowserSession] Close error for session", sessionId, ":", (err as Error)?.message ?? err);
+      // Silent: close errors are not critical
     }
 
     this.sessions.delete(sessionId);
@@ -191,7 +191,7 @@ export class SessionManager {
         await session.page.close();
         await session.context.close();
       } catch (err) {
-        console.debug("[BrowserSession] Close error:", (err as Error)?.message ?? err);
+        // Silent: close errors are not critical
       }
     });
 

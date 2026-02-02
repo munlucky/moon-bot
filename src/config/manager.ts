@@ -72,8 +72,7 @@ async function createBackup(configPath: string): Promise<void> {
     // Clean old backups (keep last 10)
     await cleanOldBackups();
   } catch (error) {
-    // Log warning but don't fail the save operation
-    console.warn(`Backup failed: ${error instanceof Error ? error.message : error}`);
+    // Silent: backup failure is not critical
   }
 }
 
@@ -104,7 +103,7 @@ async function cleanOldBackups(): Promise<void> {
       await fs.unlink(file.path);
     }
   } catch (err) {
-    console.debug("[ConfigManager] Backup cleanup error:", (err as Error)?.message ?? err);
+    // Silent: cleanup failure is not critical
   }
 }
 

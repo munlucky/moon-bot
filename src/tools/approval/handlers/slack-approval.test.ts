@@ -25,6 +25,18 @@ vi.mock('../../../channels/slack.js', () => ({
   SlackAdapter: vi.fn(),
 }));
 
+// Mock Logger
+const mockLogger = {
+  warn: vi.fn(),
+  info: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+};
+
+vi.mock('../../../utils/logger.js', () => ({
+  createLogger: () => mockLogger,
+}));
+
 const createMockRequest = (overrides?: Partial<ApprovalRequest>): ApprovalRequest => ({
   id: 'approval-1234567890',
   invocationId: 'invocation-abc',
@@ -325,19 +337,18 @@ describe('slack-approval', () => {
 
     // T27 - Send request without adapter (silent skip)
     it('T27: should silently skip sendRequest when adapter not set', async () => {
-      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      mockLogger.warn.mockClear();
       const request = createMockRequest();
 
       await expect(handler.sendRequest(request)).resolves.not.toThrow();
 
       // Adapter is not set, so should skip without warning
-      expect(consoleWarnSpy).not.toHaveBeenCalled();
-      consoleWarnSpy.mockRestore();
+      expect(mockLogger.warn).not.toHaveBeenCalled();
     });
 
     // T28 - Send request without channel ID (warns but doesn't throw)
     it('T28: should handle sendRequest without channel ID', async () => {
-      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      mockLogger.warn.mockClear();
       handler.setAdapter(mockAdapter);
       // Don't set channel ID
       const request = createMockRequest();
@@ -345,11 +356,10 @@ describe('slack-approval', () => {
       await expect(handler.sendRequest(request)).resolves.not.toThrow();
 
       // Channel ID is not set, so should skip with warning
-      expect(consoleWarnSpy).toHaveBeenCalledWith(
+      expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.stringContaining('No channel ID configured')
       );
       expect(mockAdapter.sendBlocks).not.toHaveBeenCalled();
-      consoleWarnSpy.mockRestore();
     });
 
     // T29 - Send request successfully

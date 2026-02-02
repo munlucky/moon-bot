@@ -345,10 +345,7 @@ export class ClaudeCodeSessionManager {
           ...captureData,
         };
       } catch (error) {
-        console.error(
-          `[ClaudeCodeSessionManager] Write to remote session ${session.id} failed:`,
-          error instanceof Error ? error.message : error
-        );
+        // Silent: write error is handled via return value
         return {
           success: false,
           bytesWritten: 0,
@@ -417,10 +414,7 @@ export class ClaudeCodeSessionManager {
           ...captureData,
         };
       } catch (error) {
-        console.error(
-          `[ClaudeCodeSessionManager] Poll remote session ${session.id} failed:`,
-          error instanceof Error ? error.message : error
-        );
+        // Silent: poll error is handled via return null
         return null;
       }
     }
@@ -524,10 +518,7 @@ export class ClaudeCodeSessionManager {
         );
         lastOutput = pollResult.lines.slice(-50).join("\n"); // Last 50 lines
       } catch (error) {
-        console.warn(
-          `[ClaudeCodeSessionManager] Could not poll last output for session ${session.id} before stopping:`,
-          error instanceof Error ? error.message : error
-        );
+        // Silent: poll before stop is best-effort
       }
 
       // Stop remote session - this must always be attempted
@@ -541,10 +532,6 @@ export class ClaudeCodeSessionManager {
         killSuccess = stopResult.success;
         killMessage = stopResult.success ? "Remote session stopped" : "Failed to stop remote session";
       } catch (error) {
-        console.error(
-          `[ClaudeCodeSessionManager] Stop remote session ${session.id} failed:`,
-          error instanceof Error ? error.message : error
-        );
         killSuccess = false;
         killMessage = error instanceof Error ? error.message : "Failed to stop remote session";
       }
@@ -615,10 +602,7 @@ export class ClaudeCodeSessionManager {
         nodeName: session.nodeName,
       };
     } catch (error) {
-      console.warn(
-        `[ClaudeCodeSessionManager] Screen capture failed for session ${session.id}:`,
-        error instanceof Error ? error.message : error
-      );
+      // Silent: screen capture failure is handled via return value
       return {
         nodeId: session.nodeId,
         nodeName: session.nodeName,

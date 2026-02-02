@@ -274,11 +274,11 @@ export async function createGatewayTools(
 
   // Set up periodic session cleanup
   setInterval(() => {
-    processSessionManager.cleanupExpired().catch((err) => {
-      console.debug("[SessionCleanup] ProcessSessionManager cleanup error:", err?.message ?? err);
+    processSessionManager.cleanupExpired().catch(() => {
+      // Silent: cleanup errors are not critical
     });
-    claudeCodeSessionManager.cleanupExpired().catch((err) => {
-      console.debug("[SessionCleanup] ClaudeCodeSessionManager cleanup error:", err?.message ?? err);
+    claudeCodeSessionManager.cleanupExpired().catch(() => {
+      // Silent: cleanup errors are not critical
     });
     nodeSessionManager.cleanupExpired();
   }, 5 * 60 * 1000); // Every 5 minutes
