@@ -8,6 +8,12 @@
 
 import { createHash } from "crypto";
 
+/** Default time window: 1 minute in milliseconds */
+const DEFAULT_WINDOW_MS = 60000;
+
+/** Default maximum attempts per window */
+const DEFAULT_MAX_ATTEMPTS = 10;
+
 /**
  * Configuration for ConnectionRateLimiter
  */
@@ -25,8 +31,8 @@ export class ConnectionRateLimiter {
   private readonly maxAttempts: number;
 
   constructor(config?: Partial<RateLimiterConfig>) {
-    this.windowMs = config?.windowMs ?? 60000;
-    this.maxAttempts = config?.maxAttempts ?? 10;
+    this.windowMs = config?.windowMs ?? DEFAULT_WINDOW_MS;
+    this.maxAttempts = config?.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
   }
 
   /**
@@ -35,54 +41,18 @@ export class ConnectionRateLimiter {
    * @returns true if connection is allowed, false if rate limited
    */
   checkLimit(ip: string): boolean {
-    const now = Date.now();
-    const windowStart = now - this.windowMs;
-
-    // Get existing attempts for this IP
-    let attempts = this.attempts.get(ip) || [];
-
-    // Filter out attempts outside the time window
-    attempts = attempts.filter(timestamp => timestamp > windowStart);
-
-    // Check if limit exceeded
-    if (attempts.length >= this.maxAttempts) {
-      return false;
-    }
-
-    // Add current attempt
-    attempts.push(now);
-    this.attempts.set(ip, attempts);
-
-    return true;
+    return this.checkLimitInMap(this.attempts, ip);
   }
 
   /**
    * Check if a token is within rate limits.
    * Prevents bypass of IP-based rate limiting via multiple IPs.
-   * @param token Authentication token (first 8 chars for logging)
+   * @param token Authentication token
    * @returns true if connection is allowed, false if rate limited
    */
   checkTokenLimit(token: string): boolean {
-    const now = Date.now();
-    const windowStart = now - this.windowMs;
-
-    // Hash token for storage (SHA-256 to prevent collisions)
     const tokenHash = createHash('sha256').update(token).digest('hex');
-    let attempts = this.tokenAttempts.get(tokenHash) || [];
-
-    // Filter out attempts outside the time window
-    attempts = attempts.filter(timestamp => timestamp > windowStart);
-
-    // Check if limit exceeded
-    if (attempts.length >= this.maxAttempts) {
-      return false;
-    }
-
-    // Add current attempt
-    attempts.push(now);
-    this.tokenAttempts.set(tokenHash, attempts);
-
-    return true;
+    return this.checkLimitInMap(this.tokenAttempts, tokenHash);
   }
 
   /**
@@ -91,24 +61,41 @@ export class ConnectionRateLimiter {
   cleanup(): void {
     const now = Date.now();
     const windowStart = now - this.windowMs;
+    this.cleanupMap(this.attempts, windowStart);
+    this.cleanupMap(this.tokenAttempts, windowStart);
+  }
 
-    // Clean IP-based entries
-    for (const [ip, attempts] of this.attempts.entries()) {
-      const validAttempts = attempts.filter(timestamp => timestamp > windowStart);
-      if (validAttempts.length === 0) {
-        this.attempts.delete(ip);
-      } else {
-        this.attempts.set(ip, validAttempts);
-      }
+  /**
+   * Check if limit is exceeded for a given key in a map.
+   * @private
+   */
+  private checkLimitInMap(map: Map<string, number[]>, key: string): boolean {
+    const now = Date.now();
+    const windowStart = now - this.windowMs;
+
+    let attempts = map.get(key) || [];
+    attempts = attempts.filter(timestamp => timestamp > windowStart);
+
+    if (attempts.length >= this.maxAttempts) {
+      return false;
     }
 
-    // Clean token-based entries
-    for (const [tokenHash, attempts] of this.tokenAttempts.entries()) {
+    attempts.push(now);
+    map.set(key, attempts);
+    return true;
+  }
+
+  /**
+   * Clean up expired entries from a map.
+   * @private
+   */
+  private cleanupMap(map: Map<string, number[]>, windowStart: number): void {
+    for (const [key, attempts] of map.entries()) {
       const validAttempts = attempts.filter(timestamp => timestamp > windowStart);
       if (validAttempts.length === 0) {
-        this.tokenAttempts.delete(tokenHash);
+        map.delete(key);
       } else {
-        this.tokenAttempts.set(tokenHash, validAttempts);
+        map.set(key, validAttempts);
       }
     }
   }

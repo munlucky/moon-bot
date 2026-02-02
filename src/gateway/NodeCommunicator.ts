@@ -10,6 +10,19 @@ import type { WebSocket } from "ws";
 import type { NodeSessionManager } from "../tools/nodes/index.js";
 import { createLogger, type Logger } from "../utils/logger.js";
 
+/** Error codes for node communication */
+const NodeErrorCode = {
+  NOT_FOUND: 'NODE_NOT_FOUND',
+  NOT_AVAILABLE: 'NODE_NOT_AVAILABLE',
+  UNREACHABLE: 'NODE_UNREACHABLE',
+  TIMEOUT: 'NODE_TIMEOUT',
+  DISCONNECTED: 'NODE_DISCONNECTED',
+  SHUTDOWN: 'COMMUNICATOR_SHUTDOWN',
+} as const;
+
+/** Default timeout for node requests (30 seconds) */
+const DEFAULT_TIMEOUT_MS = 30000;
+
 /**
  * Pending request with timeout and callbacks.
  */
@@ -17,6 +30,7 @@ interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timeout: NodeJS.Timeout;
+  nodeId: string; // Track which node this request belongs to
 }
 
 export interface NodeCommunicatorDeps {
@@ -44,17 +58,10 @@ export class NodeCommunicator {
    * @returns true if sent successfully
    */
   sendToNode(nodeId: string, message: unknown): boolean {
-    const node = this.nodeSessionManager.getNode(nodeId);
-    if (!node) {
+    const socket = this.getNodeSocket(nodeId);
+    if (!socket) {
       return false;
     }
-
-    const sockets = this.getSockets();
-    const socket = sockets.get(node.socketId);
-    if (!socket || socket.readyState !== socket.OPEN) {
-      return false;
-    }
-
     socket.send(JSON.stringify(message));
     return true;
   }
@@ -73,44 +80,17 @@ export class NodeCommunicator {
     params: unknown,
     options: { timeoutMs?: number } = {}
   ): Promise<unknown> {
-    // Generate correlation ID
+    this.ensureNodeAvailable(nodeId);
+
     const correlationId = randomUUID();
+    const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const request = { jsonrpc: "2.0", id: correlationId, method, params };
 
-    // Check node exists and is connected
-    const node = this.nodeSessionManager.getNode(nodeId);
-    if (!node) {
-      throw new Error("NODE_NOT_FOUND: Node not found or not paired");
+    if (!this.sendToNode(nodeId, request)) {
+      throw new Error(`${NodeErrorCode.UNREACHABLE}: Unable to send message to node`);
     }
 
-    if (node.status !== "paired") {
-      throw new Error(`NODE_NOT_AVAILABLE: Node is ${node.status}`);
-    }
-
-    // Set up timeout
-    const timeoutMs = options.timeoutMs ?? 30000; // 30s default
-
-    // Send request
-    const request = {
-      jsonrpc: "2.0",
-      id: correlationId,
-      method,
-      params,
-    };
-
-    const sent = this.sendToNode(nodeId, request);
-    if (!sent) {
-      throw new Error("NODE_UNREACHABLE: Unable to send message to node");
-    }
-
-    // Wait for response
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pendingRequests.delete(correlationId);
-        reject(new Error(`NODE_TIMEOUT: No response after ${timeoutMs}ms`));
-      }, timeoutMs);
-
-      this.pendingRequests.set(correlationId, { resolve, reject, timeout });
-    });
+    return this.createPendingRequest(correlationId, nodeId, timeoutMs);
   }
 
   /**
@@ -122,7 +102,6 @@ export class NodeCommunicator {
     const pending = this.pendingRequests.get(id);
 
     if (!pending) {
-      // No pending request for this ID (might be already handled or unknown)
       return;
     }
 
@@ -137,33 +116,92 @@ export class NodeCommunicator {
   }
 
   /**
-   * Handle node disconnection (rejects all pending requests for that node).
+   * Handle node disconnection - rejects only that node's pending requests.
    * @param socketId - WebSocket socket ID
    */
   handleNodeDisconnect(socketId: string): void {
-    // Mark node as offline
     this.nodeSessionManager.markOffline(socketId);
 
-    // Find the node and reject all its pending requests
     const node = this.nodeSessionManager.getNodeBySocket(socketId);
-    if (node) {
-      for (const [id, pending] of this.pendingRequests.entries()) {
-        // Reject all pending requests (conservative approach - node disconnected)
-        pending.reject(new Error("NODE_DISCONNECTED: Node companion disconnected"));
-        clearTimeout(pending.timeout);
-        this.pendingRequests.delete(id);
-      }
+    if (!node) {
+      return;
     }
+
+    // FIX: Only reject pending requests for THIS specific node
+    this.rejectNodeRequests(node.nodeId, new Error(`${NodeErrorCode.DISCONNECTED}: Node companion disconnected`));
   }
 
   /**
    * Clean up all pending requests.
    */
   shutdown(): void {
+    const error = new Error(`${NodeErrorCode.SHUTDOWN}: Node communicator shutting down`);
     for (const [id, pending] of this.pendingRequests.entries()) {
-      pending.reject(new Error("COMMUNICATOR_SHUTDOWN: Node communicator shutting down"));
+      pending.reject(error);
       clearTimeout(pending.timeout);
       this.pendingRequests.delete(id);
+    }
+  }
+
+  /**
+   * Get the WebSocket for a node.
+   * @private
+   */
+  private getNodeSocket(nodeId: string): WebSocket | null {
+    const node = this.nodeSessionManager.getNode(nodeId);
+    if (!node) {
+      return null;
+    }
+
+    const sockets = this.getSockets();
+    const socket = sockets.get(node.socketId);
+    if (!socket || socket.readyState !== socket.OPEN) {
+      return null;
+    }
+
+    return socket;
+  }
+
+  /**
+   * Ensure a node is available for communication.
+   * @private
+   */
+  private ensureNodeAvailable(nodeId: string): void {
+    const node = this.nodeSessionManager.getNode(nodeId);
+    if (!node) {
+      throw new Error(`${NodeErrorCode.NOT_FOUND}: Node not found or not paired`);
+    }
+    if (node.status !== "paired") {
+      throw new Error(`${NodeErrorCode.NOT_AVAILABLE}: Node is ${node.status}`);
+    }
+  }
+
+  /**
+   * Create a pending request promise with timeout.
+   * @private
+   */
+  private createPendingRequest(correlationId: string, nodeId: string, timeoutMs: number): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(correlationId);
+        reject(new Error(`${NodeErrorCode.TIMEOUT}: No response after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      this.pendingRequests.set(correlationId, { resolve, reject, timeout, nodeId });
+    });
+  }
+
+  /**
+   * Reject all pending requests for a specific node.
+   * @private
+   */
+  private rejectNodeRequests(nodeId: string, error: Error): void {
+    for (const [id, pending] of this.pendingRequests.entries()) {
+      if (pending.nodeId === nodeId) {
+        pending.reject(error);
+        clearTimeout(pending.timeout);
+        this.pendingRequests.delete(id);
+      }
     }
   }
 }

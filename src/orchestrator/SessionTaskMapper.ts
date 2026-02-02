@@ -7,25 +7,31 @@
 
 import type { Logger } from "../utils/logger.js";
 
+/** Default TTL: 1 hour in milliseconds */
+const DEFAULT_TTL_MS = 3600000;
+
+/** Default cleanup interval: 5 minutes in milliseconds */
+const DEFAULT_CLEANUP_INTERVAL_MS = 300000;
+
+interface SessionEntry {
+  taskId: string;
+  createdAt: number;
+}
+
 export class SessionTaskMapper {
-  private entries = new Map<string, { taskId: string; createdAt: number }>();
+  private entries = new Map<string, SessionEntry>();
   private readonly logger: Logger;
   private readonly ttlMs: number;
   private cleanupInterval: NodeJS.Timeout | null = null;
 
-  /**
-   * @param logger - Logger instance
-   * @param ttlMs - Time-to-live for entries in milliseconds (default: 1 hour)
-   * @param cleanupIntervalMs - Cleanup interval in milliseconds (default: 5 minutes)
-   */
-  constructor(logger: Logger, ttlMs: number = 3600000, cleanupIntervalMs: number = 300000) {
+  constructor(
+    logger: Logger,
+    ttlMs: number = DEFAULT_TTL_MS,
+    cleanupIntervalMs: number = DEFAULT_CLEANUP_INTERVAL_MS
+  ) {
     this.logger = logger;
     this.ttlMs = ttlMs;
-
-    // Start automatic cleanup interval
-    this.cleanupInterval = setInterval(() => {
-      this.autoCleanup();
-    }, cleanupIntervalMs);
+    this.startCleanupInterval(cleanupIntervalMs);
   }
 
   /**
@@ -40,6 +46,7 @@ export class SessionTaskMapper {
 
   /**
    * Get the task ID for a session ID.
+   * @returns Task ID if found and not expired, otherwise undefined
    */
   get(sessionId: string): string | undefined {
     const entry = this.entries.get(sessionId);
@@ -47,8 +54,7 @@ export class SessionTaskMapper {
       return undefined;
     }
 
-    // Check if entry has expired
-    if (Date.now() - entry.createdAt > this.ttlMs) {
+    if (this.isExpired(entry)) {
       this.entries.delete(sessionId);
       return undefined;
     }
@@ -57,7 +63,7 @@ export class SessionTaskMapper {
   }
 
   /**
-   * Check if a session ID exists.
+   * Check if a session ID exists and is not expired.
    */
   has(sessionId: string): boolean {
     return this.get(sessionId) !== undefined;
@@ -66,14 +72,10 @@ export class SessionTaskMapper {
   /**
    * Remove all entries for a specific task ID.
    * Call this when a task completes, fails, or is aborted.
+   * @returns Number of entries removed
    */
   cleanupByTaskId(taskId: string): number {
-    const sessionIdsToRemove: string[] = [];
-    for (const [sessionId, entry] of this.entries.entries()) {
-      if (entry.taskId === taskId) {
-        sessionIdsToRemove.push(sessionId);
-      }
-    }
+    const sessionIdsToRemove = this.findSessionIdsByTaskId(taskId);
 
     for (const sessionId of sessionIdsToRemove) {
       this.entries.delete(sessionId);
@@ -97,13 +99,7 @@ export class SessionTaskMapper {
    * Get all session IDs for a specific task ID.
    */
   getSessionIdsForTask(taskId: string): string[] {
-    const sessionIds: string[] = [];
-    for (const [sessionId, entry] of this.entries.entries()) {
-      if (entry.taskId === taskId) {
-        sessionIds.push(sessionId);
-      }
-    }
-    return sessionIds;
+    return this.findSessionIdsByTaskId(taskId);
   }
 
   /**
@@ -126,7 +122,54 @@ export class SessionTaskMapper {
   }
 
   /**
+   * Clear all entries and stop cleanup interval.
+   */
+  shutdown(): void {
+    this.entries.clear();
+
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+
+    this.logger.debug("SessionTaskMapper shutdown");
+  }
+
+  /**
+   * Start the automatic cleanup interval.
+   * @private
+   */
+  private startCleanupInterval(intervalMs: number): void {
+    this.cleanupInterval = setInterval(() => {
+      this.autoCleanup();
+    }, intervalMs);
+  }
+
+  /**
+   * Check if an entry has expired.
+   * @private
+   */
+  private isExpired(entry: SessionEntry): boolean {
+    return Date.now() - entry.createdAt > this.ttlMs;
+  }
+
+  /**
+   * Find all session IDs for a given task ID.
+   * @private
+   */
+  private findSessionIdsByTaskId(taskId: string): string[] {
+    const sessionIds: string[] = [];
+    for (const [sessionId, entry] of this.entries.entries()) {
+      if (entry.taskId === taskId) {
+        sessionIds.push(sessionId);
+      }
+    }
+    return sessionIds;
+  }
+
+  /**
    * Automatically clean up expired entries.
+   * @private
    */
   private autoCleanup(): void {
     const cutoff = Date.now() - this.ttlMs;
@@ -142,19 +185,5 @@ export class SessionTaskMapper {
     if (removedCount > 0) {
       this.logger.debug("Auto-cleaned expired session mappings", { count: removedCount });
     }
-  }
-
-  /**
-   * Clear all entries and stop cleanup interval.
-   */
-  shutdown(): void {
-    this.entries.clear();
-
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = null;
-    }
-
-    this.logger.debug("SessionTaskMapper shutdown");
   }
 }

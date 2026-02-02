@@ -11,6 +11,13 @@ import { createLogger, type Logger } from "../utils/logger.js";
 import { ConnectionRateLimiter } from "./ConnectionRateLimiter.js";
 import { ErrorSanitizer } from "../utils/error-sanitizer.js";
 
+/** Error codes for authentication failures */
+const AuthErrorCode = {
+  MISSING_TOKEN: 'AUTH_MISSING_TOKEN',
+  RATE_LIMITED: 'RATE_LIMIT_EXCEEDED',
+  INVALID_TOKEN: 'AUTH_INVALID_TOKEN',
+} as const;
+
 /**
  * Authentication configuration.
  */
@@ -24,10 +31,7 @@ export class GatewayAuthenticator {
   private rateLimiter: ConnectionRateLimiter;
 
   constructor(config: SystemConfig, rateLimiter: ConnectionRateLimiter) {
-    const authConfig = config.gateways?.[0]?.auth;
-    this.authConfig = authConfig?.tokens && Object.keys(authConfig.tokens).length > 0
-      ? authConfig
-      : null;
+    this.authConfig = this.parseAuthConfig(config);
     this.logger = createLogger(config);
     this.rateLimiter = rateLimiter;
   }
@@ -43,58 +47,82 @@ export class GatewayAuthenticator {
    * Validate a connection token.
    * Uses timing-safe comparison to prevent timing attacks.
    * @param token - Token to validate (hex string)
-   * @returns true if token is valid
    * @throws Error with sanitized message if validation fails
    */
   validateToken(token: string): void {
     if (!this.authConfig) {
-      return; // No auth configured
+      return;
     }
 
     if (!token) {
-      this.logger.warn("Connection attempt without token");
-      const sanitized = ErrorSanitizer.sanitizeWithCode(
-        new Error("Authentication required"),
-        'AUTH_MISSING_TOKEN'
+      this.throwAuthError(
+        "Authentication required",
+        AuthErrorCode.MISSING_TOKEN,
+        "Connection attempt without token"
       );
-      throw new Error(sanitized.message);
     }
 
-    // Check token-based rate limit (prevents IP bypass)
     if (!this.rateLimiter.checkTokenLimit(token)) {
-      this.logger.warn(`Token rate limited`);
-      const sanitized = ErrorSanitizer.sanitizeWithCode(
-        new Error("Rate limit exceeded"),
-        'RATE_LIMIT_EXCEEDED'
+      this.throwAuthError(
+        "Rate limit exceeded",
+        AuthErrorCode.RATE_LIMITED,
+        "Token rate limited"
       );
-      throw new Error(sanitized.message);
     }
 
-    // Use timing-safe comparison to prevent timing attacks
-    // Compare against VALUES (hashed tokens), not keys
-    // Must iterate ALL tokens to prevent timing leak via short-circuit
-    let isValidToken = false;
-    const validTokens = this.authConfig.tokens ? Object.values(this.authConfig.tokens) : [];
+    if (!this.isValidToken(token)) {
+      this.throwAuthError(
+        "Authentication failed",
+        AuthErrorCode.INVALID_TOKEN,
+        "Invalid token attempt"
+      );
+    }
+  }
+
+  /**
+   * Parse authentication configuration from system config.
+   * @private
+   */
+  private parseAuthConfig(config: SystemConfig): AuthConfig | null {
+    const authConfig = config.gateways?.[0]?.auth;
+    if (!authConfig?.tokens || Object.keys(authConfig.tokens).length === 0) {
+      return null;
+    }
+    return authConfig;
+  }
+
+  /**
+   * Check if token matches any valid token using timing-safe comparison.
+   * @private
+   */
+  private isValidToken(token: string): boolean {
+    const validTokens = Object.values(this.authConfig!.tokens ?? []);
+
     for (const validToken of validTokens) {
       try {
         if (timingSafeEqual(
           Buffer.from(validToken, 'hex'),
           Buffer.from(token, 'hex')
         )) {
-          isValidToken = true;
+          return true;
         }
       } catch {
-        // Length mismatch: continue checking, still takes same time
+        // Length mismatch: continue checking (timing-safe)
       }
     }
 
-    if (!isValidToken) {
-      this.logger.warn(`Invalid token attempt`);
-      const sanitized = ErrorSanitizer.sanitizeWithCode(
-        new Error("Authentication failed"),
-        'AUTH_INVALID_TOKEN'
-      );
-      throw new Error(sanitized.message);
+    return false;
+  }
+
+  /**
+   * Throw a sanitized authentication error.
+   * @private
+   */
+  private throwAuthError(message: string, code: string, logMessage?: string): never {
+    if (logMessage) {
+      this.logger.warn(logMessage);
     }
+    const sanitized = ErrorSanitizer.sanitizeWithCode(new Error(message), code);
+    throw new Error(sanitized.message);
   }
 }
