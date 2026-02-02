@@ -36,9 +36,11 @@ Runtime: Node.js 22+ (ES Modules)
 Language: TypeScript 5.5+
 WebSocket: ws 라이브러리
 Discord: discord.js v14
+Slack: @slack/bolt v3
 LLM: OpenAI SDK, GLM API
 Browser: Playwright
 Testing: Vitest
+Schema: @sinclair/typebox, Zod
 ```
 
 ---
@@ -49,7 +51,7 @@ Testing: Vitest
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        사용자 (Discord, CLI)                      │
+│                        사용자 (Discord, Slack, CLI)              │
 └───────────────────────────────┬─────────────────────────────────┘
                                 │
                                 ▼
@@ -74,8 +76,13 @@ Testing: Vitest
 │  ┌─────────────────────────────────────────────────────────┐    │
 │  │              TaskOrchestrator (작업 조율)                 │    │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │    │
-│  │  │ TaskRegistry │  │PerChannelQueue│ │ StateManager │   │    │
+│  │  │ TaskRegistry │  │PerChannelQueue│ │StateManager │   │    │
 │  │  └──────────────┘  └──────────────┘  └──────────────┘   │    │
+│  │                                                          │    │
+│  │  ┌──────────────┐  ┌──────────────┐                     │    │
+│  │  │SessionTask   │  │ ApprovalFlow │                     │    │
+│  │  │   Mapper     │  │ Coordinator  │                     │    │
+│  │  └──────────────┘  └──────────────┘                     │    │
 │  └─────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────┘
                                │
@@ -102,13 +109,17 @@ Testing: Vitest
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Tool Layer (도구 실행)                        │
 │  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌──────────┐  │
-│  │ FileSystem │  │    HTTP    │  │  Browser   │  │ Desktop  │  │
+│  │FileSystem │  │    HTTP    │  │  Browser   │  │ Desktop  │  │
 │  │ (파일 I/O) │  │(웹 요청)   │  │(Playwright)│  │(명령실행)│  │
 │  └────────────┘  └────────────┘  └────────────┘  └──────────┘  │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐                │
+│  │  Process   │  │Claude Code │  │   Nodes    │                │
+│  │(터미널 세션)│  │  (CLI 통합) │  │(Companion) │                │
+│  └────────────┘  └────────────┘  └────────────┘                │
 │                         ▲                                       │
 │                         │                                       │
 │  ┌──────────────────────┴───────────────────────────────────┐  │
-│  │  ToolRuntime + ApprovalManager + SchemaValidator         │  │
+│  │  ToolRegistry + ToolExecutor + ApprovalManager           │  │
 │  └──────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
                                │
@@ -131,29 +142,27 @@ src/
 ├── discord-bot.ts        # Discord 봇 단독 실행
 │
 ├── gateway/              # WebSocket 서버
-│   ├── server.ts         # GatewayServer 클래스
+│   ├── index.ts          # GatewayServer 클래스
 │   ├── json-rpc.ts       # JSON-RPC 2.0 유틸리티
+│   ├── ConnectionRateLimiter.ts  # 연결 속도 제한
 │   └── handlers/         # RPC 메서드 핸들러
 │       ├── channel.handler.ts
 │       ├── tools.handler.ts
 │       └── nodes.handler.ts
 │
 ├── orchestrator/         # 작업 조율
-│   ├── TaskOrchestrator.ts  # 핵심 조율 로직
-│   ├── PerChannelQueue.ts   # 채널별 FIFO 큐
-│   ├── TaskRegistry.ts      # 작업 등록/추적
-│   └── types.ts             # Orchestrator 타입 정의
+│   ├── index.ts          # 모듈 export
+│   ├── TaskOrchestrator.ts   # 핵심 조율 로직
+│   ├── TaskRegistry.ts       # 작업 등록/추적
+│   ├── PerChannelQueue.ts    # 채널별 FIFO 큐
+│   ├── SessionTaskMapper.ts  # 세션-작업 매핑
+│   ├── ApprovalFlowCoordinator.ts  # 승인 플로우 조율
+│   └── types.ts           # Orchestrator 타입 정의
 │
 ├── agents/               # AI 에이전트
 │   ├── planner.ts        # LLM 기반 계획 수립
 │   ├── executor.ts       # 도구 실행 관리
-│   ├── replanner.ts      # 통합 Replanner 모듈
-│   └── replanner/        # 실패 복구 시스템
-│       ├── FailureAnalyzer.ts
-│       ├── AlternativeSelector.ts
-│       ├── RecoveryLimiter.ts
-│       ├── PathReplanner.ts
-│       └── types.ts
+│   └── replanner.ts      # 통합 Replanner 모듈
 │
 ├── llm/                  # LLM 통합
 │   ├── LLMClient.ts          # 고수준 LLM 인터페이스
@@ -162,20 +171,27 @@ src/
 │   ├── SystemPromptBuilder.ts # 시스템 프롬프트 빌더
 │   ├── types.ts              # LLM 타입 정의
 │   └── providers/
+│       ├── index.ts
 │       ├── BaseLLMProvider.ts
 │       ├── OpenAIProvider.ts
 │       └── GLMProvider.ts
 │
 ├── tools/                # 도구 모음
-│   ├── index.ts          # Toolkit 클래스
+│   ├── index.ts          # 도구 모음 export
 │   ├── runtime/          # 실행 환경
-│   │   ├── ToolRuntime.ts
+│   │   ├── ToolRegistry.ts    # 도구 등록/조회
+│   │   ├── ToolExecutor.ts    # 도구 실행
 │   │   ├── ToolResultBuilder.ts
-│   │   └── ApprovalManager.ts
+│   │   ├── ApprovalManager.ts # 승인 관리
+│   │   └── SchemaValidator.ts # 스키마 검증
 │   ├── approval/         # 승인 시스템
 │   │   ├── ApprovalFlowManager.ts
 │   │   ├── ApprovalStore.ts
 │   │   └── handlers/     # 채널별 승인 핸들러
+│   │       ├── cli-approval.ts
+│   │       ├── ws-approval.ts
+│   │       ├── discord-approval.ts
+│   │       └── slack-approval.ts
 │   ├── filesystem/       # 파일 도구
 │   ├── http/             # HTTP 도구 (+ SsrfGuard)
 │   ├── browser/          # 브라우저 도구 (Playwright)
@@ -184,9 +200,10 @@ src/
 │   ├── claude-code/      # Claude Code CLI 통합 도구
 │   ├── nodes/            # Node Companion 연동 도구
 │   ├── policy/           # 도구 프로필 정책
-│   └── schemas/          # TypeBox 스키마
+│   └── schemas/          # TypeBox/Zod 스키마
 │
 ├── channels/             # 채널 어댑터
+│   ├── index.ts
 │   ├── discord.ts        # Discord 봇
 │   ├── slack.ts          # Slack 봇
 │   └── GatewayClient.ts  # Gateway 클라이언트
@@ -195,6 +212,14 @@ src/
 │   ├── index.ts
 │   ├── types.ts
 │   ├── commands/         # gateway, logs, approvals, channel 등
+│   │   ├── gateway.ts
+│   │   ├── logs.ts
+│   │   ├── approvals.ts
+│   │   ├── channel.ts
+│   │   ├── config.ts
+│   │   ├── call.ts
+│   │   ├── doctor.ts     # 진단 도구
+│   │   └── pairing.ts    # 페어링 명령
 │   └── utils/            # 출력 유틸리티, RPC 클라이언트
 │
 ├── auth/                 # 인증 시스템
@@ -204,8 +229,12 @@ src/
 │   └── manager.ts        # Cron 매니저
 │
 ├── sessions/             # 세션 관리
+│   ├── manager.ts
+│   └── SessionKey.ts
+│
 ├── config/               # 설정 관리
 ├── types/                # TypeScript 타입 정의
+│   └── index.ts
 └── utils/                # 유틸리티 (logger 등)
 ```
 
@@ -222,7 +251,7 @@ src/
         │
         ▼
 [2] DiscordAdapter.handleMessage()
-    └── src/channels/discord.ts:149
+    └── src/channels/discord.ts
         │
         ▼
 [3] Gateway RPC 호출: "chat" 메서드
@@ -230,11 +259,11 @@ src/
         │
         ▼
 [4] GatewayServer "chat.send" RPC Handler
-    └── src/gateway/server.ts:313
+    └── src/gateway/index.ts
         │
         ▼
 [5] TaskOrchestrator.createTask()
-    └── src/orchestrator/TaskOrchestrator.ts:376
+    └── src/orchestrator/TaskOrchestrator.ts
     └── Task 상태: PENDING
         │
         ▼
@@ -247,14 +276,14 @@ src/
         │
         ▼
 [8] Executor.execute()
-    └── src/agents/executor.ts:49
+    └── src/agents/executor.ts
         │
         ├──▶ [8a] Planner.plan()
         │         └── LLM에게 계획 요청
         │         └── Steps[] 반환
         │
         ├──▶ [8b] 각 Step 순차 실행
-        │         └── ToolRuntime.invoke()
+        │         └── ToolExecutor.invoke()
         │
         └──▶ [8c] 실패 시 Replanner 호출
                   └── 복구 시도 또는 중단
@@ -292,7 +321,7 @@ export class DiscordAdapter {
 **Step 4-6: Gateway에서 Task 생성**
 
 ```typescript
-// src/gateway/server.ts
+// src/gateway/index.ts (GatewayServer)
 private async handleChatMessage(params: ChatParams): Promise<TaskResponse> {
   // Task 생성
   const { taskId, state } = this.orchestrator.createTask({
@@ -344,7 +373,7 @@ export class Executor {
 [1] Executor가 SystemRunTool 호출 시도
         │
         ▼
-[2] ToolRuntime.invoke() 에서 승인 필요 확인
+[2] ToolExecutor.invoke() 에서 승인 필요 확인
     └── spec.requiresApproval === true
         │
         ▼
@@ -352,11 +381,15 @@ export class Executor {
     └── 승인 요청 생성 (ID, 만료시간 포함)
         │
         ▼
-[4] Gateway → Discord: 승인 UI 표시
+[4] ApprovalFlowCoordinator 플로우 시작
+    └── 채널별 핸들러로 승인 UI 표시 요청
+        │
+        ▼
+[5] Gateway → Discord: 승인 UI 표시
     └── 버튼: [승인] [거부]
         │
         ▼
-[5] 사용자가 버튼 클릭
+[6] 사용자가 버튼 클릭
         │
         ├──▶ [승인] ApprovalManager.approve()
         │         └── 도구 실행 진행
@@ -403,9 +436,10 @@ export class Executor {
 
 | 파일 | 역할 | 핵심 클래스/함수 |
 |------|------|-----------------|
-| `server.ts` | WebSocket 서버 + JSON-RPC 핸들러 | `GatewayServer` |
+| `index.ts` | WebSocket 서버 + JSON-RPC 핸들러 | `GatewayServer` |
 | `json-rpc.ts` | JSON-RPC 2.0 유틸리티 | `createRequest`, `createResponse` |
-| `handlers/` | RPC 메서드별 핸들러 | `ChannelHandler`, `ToolsHandler` |
+| `ConnectionRateLimiter.ts` | 연결 속도 제한 | `ConnectionRateLimiter` |
+| `handlers/` | RPC 메서드별 핸들러 | `ChannelHandler`, `ToolsHandler`, `NodesHandler` |
 
 **GatewayServer 주요 메서드**:
 
@@ -429,6 +463,15 @@ class GatewayServer {
 ### 4.2 Orchestrator 모듈 (`src/orchestrator/`)
 
 **역할**: 작업 생명주기 관리 및 채널별 큐 조정
+
+| 파일 | 역할 |
+|------|------|
+| `TaskOrchestrator.ts` | 핵심 조율 로직 |
+| `TaskRegistry.ts` | 작업 등록/추적 |
+| `PerChannelQueue.ts` | 채널별 FIFO 큐 |
+| `SessionTaskMapper.ts` | 세션과 작업의 매핑 관리 |
+| `ApprovalFlowCoordinator.ts` | 승인 플로우 조율 |
+| `types.ts` | Orchestrator 타입 정의 |
 
 **Task 상태 머신**:
 
@@ -542,7 +585,7 @@ class Executor {
 }
 ```
 
-#### Replanner (`replanner/`)
+#### Replanner (`replanner.ts`)
 
 실패 시 복구 전략을 결정하는 4개의 컴포넌트:
 
@@ -628,6 +671,29 @@ interface ToolResult<T> {
 }
 ```
 
+**도구 런타임 구조**:
+
+```typescript
+// ToolRegistry: 도구 등록/조회
+class ToolRegistry {
+  register(spec: ToolSpec): void
+  get(id: string): ToolSpec | undefined
+  list(): ToolInfo[]
+}
+
+// ToolExecutor: 도구 실행
+class ToolExecutor {
+  async invoke(toolId: string, input: unknown): Promise<ToolResult>
+}
+
+// ApprovalManager: 승인 관리
+class ApprovalManager {
+  async requestApproval(toolId: string, input: unknown): Promise<boolean>
+  approve(approvalId: string): void
+  reject(approvalId: string): void
+}
+```
+
 **새 도구 추가 방법**:
 
 ```typescript
@@ -649,8 +715,8 @@ const myTool: ToolSpec<MyInput, MyOutput> = {
   },
 };
 
-// 2. Toolkit에 등록
-toolkit.register(myTool);
+// 2. ToolRegistry에 등록
+toolRegistry.register(myTool);
 ```
 
 ---
@@ -767,12 +833,33 @@ MOONBOT_DISCORD_TOKEN=...
 
 ### 6.3 코드 탐색 시작점
 
-1. **전체 흐름 이해**: `src/gateway/server.ts` → `handleChatMessage()`
+1. **전체 흐름 이해**: `src/gateway/index.ts` → 메시지 핸들러
 2. **작업 조율 이해**: `src/orchestrator/TaskOrchestrator.ts`
 3. **AI 로직 이해**: `src/agents/executor.ts` → `execute()`
 4. **도구 추가 방법**: `src/tools/filesystem/` 참고
 
-### 6.4 디버깅 팁
+### 6.4 CLI 명령어
+
+```bash
+# Gateway 시작/중지
+moonbot gateway start
+moonbot gateway stop
+
+# 로그 확인
+moonbot logs
+
+# 승인 대기 목록
+moonbot approvals list
+moonbot approvals approve <id>
+
+# 진단
+moonbot doctor
+
+# 채널 페어링
+moonbot pairing
+```
+
+### 6.5 디버깅 팁
 
 ```typescript
 // 로거 사용
@@ -824,7 +911,7 @@ HTTP 도구는 SSRF(Server-Side Request Forgery) 공격을 방지합니다.
 ### 7.4 인증 (Gateway)
 
 ```typescript
-// src/gateway/server.ts
+// src/gateway/index.ts
 - SHA-256 토큰 기반 인증
 - timingSafeEqual()로 타이밍 공격 방지
 - Rate Limiting: IP당 + 토큰당 요청 제한
@@ -839,8 +926,8 @@ HTTP 도구는 SSRF(Server-Side Request Forgery) 공격을 방지합니다.
 1. **코드 따라가기**: Discord 메시지가 처리되는 전체 경로를 직접 따라가 보세요
 2. **테스트 읽기**: `src/orchestrator/TaskOrchestrator.test.ts`에서 동작 예시 확인
 3. **도구 추가 실습**: 간단한 커스텀 도구를 만들어 등록해 보세요
-4. **아키텍처 문서**: `agent_system_spec.md`, `local_ai_agent_prd.md` 참고
+4. **아키텍처 문서**: `docs/` 디렉토리의 다른 문서들 참고
 
 ---
 
-*마지막 업데이트: 2026-02*
+*마지막 업데이트: 2026-02-02*
