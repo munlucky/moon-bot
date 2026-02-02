@@ -343,9 +343,14 @@ describe('Executor', () => {
 // SessionTaskMapper TTL 구현
 private entries = new Map<string, { taskId: string; createdAt: number }>();
 private readonly TTL_MS = 3600000; // 1시간
+private cleanupInterval: NodeJS.Timeout;
 
 constructor() {
-  setInterval(() => this.autoCleanup(), 300000); // 5분마다
+  this.cleanupInterval = setInterval(() => this.autoCleanup(), 300000); // 5분마다
+}
+
+public shutdown(): void {
+  clearInterval(this.cleanupInterval);
 }
 
 private autoCleanup(): void {
